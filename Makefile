@@ -3,5 +3,5 @@ get-mnist:
 	cd example/mnist && wget https://pjreddie.com/media/files/mnist_train.csv
 	cd example/mnist && wget https://pjreddie.com/media/files/mnist_test.csv
 
-run-example:
+run-example: get-mnist
 	cd example && go run main.go
