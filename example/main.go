@@ -10,33 +10,34 @@ import (
 	"time"
 
 	"art"
-	"github.com/schollz/progressbar/v3"
 )
 
 const (
 	TRAIN_SAMPLES_PER_DIGIT = -1
 	TEST_SAMPLES_PER_DIGIT  = -1
+
+	progressBarWidth = 60
 )
 
 func main() {
-	trainData, err := getData("./mnist/mnist_train.csv", TRAIN_SAMPLES_PER_DIGIT, false)
+	trainData, err := getData("./mnist/mnist_train.csv", TRAIN_SAMPLES_PER_DIGIT, true)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	testData, err := getData("./mnist/mnist_test.csv", TEST_SAMPLES_PER_DIGIT, false)
+	testData, err := getData("./mnist/mnist_test.csv", TEST_SAMPLES_PER_DIGIT, true)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	model, err := art.New(28*28, 0.9, 0.01, 1)
+	//model, err := art.New(28*28, 0.86, 0.05, 0.9)
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer model.Close()
 
-	//model.WarmUp(28*28, 4000)
 	test(trainData, testData, model.Train, model.Infer)
-	model.Close()
 }
 
 func test(
@@ -56,28 +57,29 @@ func test(
 	}
 
 	fmt.Println("Training progress:")
-	bar := progressbar.Default(int64(epochs * totalSamples))
+	pb := NewProgressBar(epochs*totalSamples, progressBarWidth)
 
 	for e := 0; e < epochs; e++ {
 		for d := range 10 {
 			digitData := trainData[strconv.Itoa(d)]
 			for i := range digitData {
 				_, k := trainFunc(digitData[i])
-				if _, ok := category2Digit[k]; ok {
-					//if prevCategoryDigit != d {
-					//	log.Printf("category %d identify at least two digits: %d and %d\n",
-					//		k, prevCategoryDigit, d)
-					//}
+				if prevCategoryDigit, ok := category2Digit[k]; ok {
+					if prevCategoryDigit != d {
+						//log.Printf("category %d identify at least two digits: %d and %d\n",
+						//	k, prevCategoryDigit, d)
+						//category2Digit[k] = d
+					}
 				} else {
 					category2Digit[k] = d
 				}
-				bar.Add(1)
+				pb.Increment()
 			}
 		}
 	}
 
 	trainingTime := time.Since(startTime)
-	fmt.Printf("\nTraining completed in %v\n", trainingTime)
+	fmt.Printf("\nTraining completed in %s\n", trainingTime.Round(time.Second))
 
 	testStartTime := time.Now()
 
@@ -89,7 +91,7 @@ func test(
 	}
 
 	fmt.Println("Testing progress:")
-	testBar := progressbar.Default(int64(samplesCount))
+	pbTest := NewProgressBar(samplesCount, progressBarWidth)
 
 	for digit := range 10 {
 		samples := testData[strconv.Itoa(digit)]
@@ -98,17 +100,17 @@ func test(
 			if digit == category2Digit[k] {
 				exactResults++
 			}
-			testBar.Add(1)
+			pbTest.Increment()
 		}
 	}
 
 	testingTime := time.Since(testStartTime)
-	fmt.Printf("\nTesting completed in %v\n", testingTime)
+	fmt.Printf("\nTesting completed in %s\n", testingTime.Round(time.Second))
 	precision := float64(exactResults) / float64(samplesCount)
-	fmt.Printf("Precision: %.1f%%\n", precision*100)
+	fmt.Printf("Accuracy: %.1f%%\n", precision*100)
 
 	totalTime := time.Since(startTime)
-	fmt.Printf("Total execution time: %v, learned categories: %d\n", totalTime, len(category2Digit))
+	fmt.Printf("Total execution time: %s, learned categories: %d\n", totalTime.Round(time.Second), len(category2Digit))
 }
 
 func getData(path string, samplesPerDigit int, shuffle bool) (map[string][][]float64, error) {
