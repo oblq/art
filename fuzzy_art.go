@@ -8,11 +8,11 @@ import (
 )
 
 type FuzzyART struct {
-	workerPoolSize         int
-	batchSize              int
-	fuzzyIntersectionsPool *sync.Pool
-	workerPool             chan struct{}
-	wg                     sync.WaitGroup
+	workerPoolSize int
+	workerPool     chan struct{}
+	batchSize      int
+	wg             sync.WaitGroup
+	fiPool         *sync.Pool
 
 	// Vigilance parameter - controls category granularity
 	// Recommended value: 0.8
@@ -62,6 +62,7 @@ func New(inputLen int, rho float64, alpha float64, beta float64) (*FuzzyART, err
 
 	workerPoolSize := runtime.NumCPU()
 	if workerPoolSize >= 4 {
+		// leave a couple of threads free for other tasks
 		workerPoolSize -= 2
 	}
 	batchSize := 8
@@ -73,15 +74,15 @@ func New(inputLen int, rho float64, alpha float64, beta float64) (*FuzzyART, err
 	}
 
 	return &FuzzyART{
-		workerPoolSize:         workerPoolSize,
-		batchSize:              batchSize,
-		fuzzyIntersectionsPool: fuzzyIntersectionsPool,
-		workerPool:             make(chan struct{}, workerPoolSize),
-		wg:                     sync.WaitGroup{},
-		rho:                    rho,
-		alpha:                  alpha,
-		beta:                   beta,
-		W:                      make([][]float64, 0),
+		workerPoolSize: workerPoolSize,
+		workerPool:     make(chan struct{}, workerPoolSize),
+		batchSize:      batchSize,
+		wg:             sync.WaitGroup{},
+		fiPool:         fuzzyIntersectionsPool,
+		rho:            rho,
+		alpha:          alpha,
+		beta:           beta,
+		W:              make([][]float64, 0),
 	}, nil
 }
 
@@ -91,8 +92,8 @@ func New(inputLen int, rho float64, alpha float64, beta float64) (*FuzzyART, err
 // Complement coding achieve normalization while preserving amplitude information.
 // Inputs preprocessed in complement coding are automatically normalized.
 func (m *FuzzyART) complementCode(X []float64) []float64 {
-	I := make([]float64, len(X)*2)
 	// Create a new slice with double the length of the input slice
+	I := make([]float64, len(X)*2)
 	for i, v := range X {
 		// Copy the original value to the first half of the new slice
 		I[i] = v
@@ -106,7 +107,7 @@ func (m *FuzzyART) complementCode(X []float64) []float64 {
 // min takes two slices of float64 values and returns a new slice
 // containing the element-wise min of the two input slices.
 // The function is used to calculate the fuzzy intersection between two vectors.
-// The fuzzy intersection array is passed by reference
+// The fuzzy intersection slice is passed by reference
 // to avoid unnecessary memory allocations.
 func (m *FuzzyART) min(A, B, fuzzyIntersection []float64) {
 	for i := range A {
@@ -143,10 +144,13 @@ func (m *FuzzyART) choice(I, W, fuzzyIntersection []float64) (choice float64, fi
 // by computing activation values for each category based on the input vector.
 // The sorting process also implicitly handles lateral inhibition by prioritizing
 // the category with the highest activation, thereby inhibiting others.
-func (m *FuzzyART) categoryChoices(I []float64) (jList []int, fuzzyIntersectionList [][]float64, fuzzyIntersectionNormList []float64) {
+func (m *FuzzyART) categoryChoices(I []float64) (jList []int, fiList [][]float64, fiNormList []float64) {
+	// Categories activations
 	T := make([]float64, len(m.W))
-	fuzzyIntersectionList = make([][]float64, len(m.W))
-	fuzzyIntersectionNormList = make([]float64, len(m.W))
+	// Fuzzy intersections
+	fiList = make([][]float64, len(m.W))
+	// Fuzzy intersection norms
+	fiNormList = make([]float64, len(m.W))
 
 	for start := 0; start < len(m.W); start += m.batchSize {
 		end := start + m.batchSize
@@ -155,19 +159,23 @@ func (m *FuzzyART) categoryChoices(I []float64) (jList []int, fuzzyIntersectionL
 		}
 
 		m.wg.Add(1)
+		// acquire a worker
 		m.workerPool <- struct{}{}
 
+		// spawn a goroutine to process a batch of categories
 		go func(input []float64, categories [][]float64, startIndex int) {
 			defer func() {
+				// release the worker
 				<-m.workerPool
 				m.wg.Done()
 			}()
 
 			for i, category := range categories {
 				globalIndex := startIndex + i
-				fuzzyIntersection := m.fuzzyIntersectionsPool.Get().([]float64)
-				T[globalIndex], fuzzyIntersectionNormList[globalIndex] = m.choice(input, category, fuzzyIntersection)
-				fuzzyIntersectionList[globalIndex] = fuzzyIntersection
+				// Get a slice from the pool, rotating already allocated slices for efficiency
+				fuzzyIntersection := m.fiPool.Get().([]float64)
+				T[globalIndex], fiNormList[globalIndex] = m.choice(input, category, fuzzyIntersection)
+				fiList[globalIndex] = fuzzyIntersection
 			}
 		}(I, m.W[start:end], start)
 	}
@@ -182,8 +190,8 @@ func (m *FuzzyART) categoryChoices(I []float64) (jList []int, fuzzyIntersectionL
 
 	// Sort category indices by activation values in descending order
 	sort.SliceStable(jList, func(i, j int) bool {
-		// In case of equal activation values, sort by category index
-		// older categories have priority.
+		// In case of equal activation values, sort by category index.
+		// Older categories must have the priority.
 		if T[jList[i]] == T[jList[j]] {
 			return jList[i] < jList[j]
 		}
@@ -193,6 +201,9 @@ func (m *FuzzyART) categoryChoices(I []float64) (jList []int, fuzzyIntersectionL
 	return
 }
 
+// match computes the match function.
+// The match function calculates the resonance between the input vector and a category.
+// The resonance is the ratio of the fuzzy intersection norm to the L1 norm of the input vector.
 func (m *FuzzyART) match(fiNorm, iNorm float64) float64 {
 	if fiNorm == 0 && iNorm == 0 {
 		return 1
@@ -206,7 +217,12 @@ func (m *FuzzyART) match(fiNorm, iNorm float64) float64 {
 // its weights are updated to move closer to the input vector, facilitating learning.
 // If it fails, the category is inhibited (temporarily ignored), and the next best category is tested,
 // continuing until a suitable category is found or all are exhausted.
-func (m *FuzzyART) resonateOrReset(I []float64, JList []int, fuzzyIntersectionList [][]float64, fiNormList []float64) (categoryWeights []float64, categoryIndex int) {
+func (m *FuzzyART) resonateOrReset(
+	I []float64,
+	JList []int,
+	fiList [][]float64,
+	fiNormList []float64,
+) (categoryWeights []float64, categoryIndex int) {
 	iNorm := m.sum(I)
 
 	for _, j := range JList {
@@ -214,7 +230,7 @@ func (m *FuzzyART) resonateOrReset(I []float64, JList []int, fuzzyIntersectionLi
 		if resonance >= m.rho {
 			newW := make([]float64, len(m.W[j]))
 			for k := range newW {
-				newW[k] = m.beta*fuzzyIntersectionList[j][k] + (1-m.beta)*m.W[j][k]
+				newW[k] = m.beta*fiList[j][k] + (1-m.beta)*m.W[j][k]
 			}
 
 			m.W[j] = newW
@@ -229,44 +245,35 @@ func (m *FuzzyART) resonateOrReset(I []float64, JList []int, fuzzyIntersectionLi
 	return m.W[len(m.W)-1], len(m.W) - 1
 }
 
+// recover returns the fuzzy intersection slices to the pool for reuse.
 func (m *FuzzyART) recover(fiList [][]float64) {
 	for _, fi := range fiList {
 		if fi == nil {
 			break
 		}
-		m.fuzzyIntersectionsPool.Put(fi)
+		m.fiPool.Put(fi)
 	}
 }
 
-//func (m *FuzzyART) WarmUp(inputLen int, size int) {
-//	// Pre-warm the pool with enough arrays for all threads
-//	for i := 0; i < size; i++ {
-//		m.fuzzyIntersectionsPool.Put(make([]float64, inputLen*2))
-//	}
-//}
-
-// Train implements the complete ART learning cycle
+// Train implements the complete ART learning cycle.
 func (m *FuzzyART) Train(I []float64) ([]float64, int) {
 	I = m.complementCode(I)
 	jList, fiList, fiNormList := m.categoryChoices(I)
-	categoryWeights, categoryIndex := m.resonateOrReset(I, jList, fiList, fiNormList)
-	m.recover(fiList)
-	return categoryWeights, categoryIndex
+	defer m.recover(fiList)
+	return m.resonateOrReset(I, jList, fiList, fiNormList)
 }
 
 // Infer implements the recognition process with optional learning.
 // It returns the weight vector of the best matching category and its index.
-// If rtl (resonate-then-learn) is true, it updates the weights of the matching category.
-func (m *FuzzyART) Infer(I []float64, rtl bool) ([]float64, int) {
+// If learn is true, it updates the weights of the matching category.
+func (m *FuzzyART) Infer(I []float64, learn bool) ([]float64, int) {
 	I = m.complementCode(I)
 	jList, fiList, fiNormList := m.categoryChoices(I)
-	if !rtl {
-		m.recover(fiList)
+	defer m.recover(fiList)
+	if !learn {
 		return m.W[jList[0]], jList[0]
 	}
-	categoryWeights, categoryIndex := m.resonateOrReset(I, jList, fiList, fiNormList)
-	m.recover(fiList)
-	return categoryWeights, categoryIndex
+	return m.resonateOrReset(I, jList, fiList, fiNormList)
 }
 
 func (m *FuzzyART) Close() {
