@@ -61,10 +61,6 @@ func New(inputLen int, rho float64, alpha float64, beta float64) (*FuzzyART, err
 	}
 
 	workerPoolSize := runtime.NumCPU()
-	if workerPoolSize >= 4 {
-		// leave a couple of threads free for other tasks
-		workerPoolSize -= 2
-	}
 	batchSize := 8
 
 	fuzzyIntersectionsPool := &sync.Pool{
