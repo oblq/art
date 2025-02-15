@@ -8,7 +8,7 @@ The _Fuzzy ART_ algorithm:
 - **_Unsupervised_** efficient learning (a single pass is enough)
 - **_Explainable_**
 - Stable **_On-line learning_** (incremental), no need to retrain from scratch, can learn incrementally and infer at the same time
-- **_Without catastrophic forgetting_**
+- **_No catastrophic forgetting_**
 
 ## Why Go?
 Any of the python implementations I found need something like 4h30m to complete a training session on the full MNIST dataset.
@@ -22,6 +22,7 @@ MacBook Pro M1 Pro: 10 cores, 16 threads, 16GB RAM:
 ## How?
 
 It uses a worker-pool of the size of the available threads (minus 2, to leave some room for other tasks) to parallelize the training process, plus a pool of pre-allocated slices that are being rotated and reused at every iteration.
+
 Probably could be optimized even further, mey be I will do a detailed profiling of the code some day but for now I'm happy with the results.
 
 ## Usage
