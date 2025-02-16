@@ -11,9 +11,9 @@ The _Fuzzy ART_ algorithm features:
 - **_No catastrophic forgetting_**
 
 ## Why Go?
-All the Python implementations I found require approximately 4 hours and 30 minutes to complete a training session on the full MNIST dataset, even in single thread this code takes an hour less.
+All the Python implementations I found require more than 4 hours to complete a training session on the full MNIST dataset, even in single thread this code takes an hour less.
 
->_**This implementation completes a training on the full MNIST dataset in 16 minutes on a MacBook Pro M1 Pro and in less than 9 minutes on a 48-thread Xeon.**_
+_**This implementation completes a training on the full MNIST dataset in 16 minutes on a MacBook Pro M1 Pro and in less than 9 minutes on a 48-thread Xeon.**_
 
 MacBook Pro M1 Pro: 10 cores, 16 threads, 16GB RAM:
 
@@ -21,7 +21,7 @@ MacBook Pro M1 Pro: 10 cores, 16 threads, 16GB RAM:
 
 ## How?
 
-It utilizes a worker pool the size of the available threads to parallelize the training process, plus a pool of pre-allocated slices that are rotated and reused at every iteration.
+It utilizes a worker pool of the size of the available threads to parallelize the training/inference process, plus a pool of pre-allocated slices that are rotated and reused at every iteration.
 
 Further optimization may be possible. A detailed profiling of the code might be conducted in the future, but for now, the results are satisfactory.
 
