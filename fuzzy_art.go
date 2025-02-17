@@ -48,7 +48,7 @@ type FuzzyART struct {
 	W [][]float64
 }
 
-func New(inputLen int, rho float64, alpha float64, beta float64) (*FuzzyART, error) {
+func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*FuzzyART, error) {
 	if rho < 0 || rho > 1 {
 		return nil, fmt.Errorf("vigilance parameter (rho) must be between 0 and 1, got %f", rho)
 	}
