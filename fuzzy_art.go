@@ -96,8 +96,7 @@ func (m *FuzzyART) complementCode(X []float64) []float64 {
 // min takes two slices of float64 values and returns a new slice
 // containing the element-wise min of the two input slices.
 // The function is used to calculate the fuzzy intersection between two vectors.
-// The fuzzy intersection slice is passed by reference
-// to avoid unnecessary memory allocations.
+// The fuzzy intersection slice is passed by reference to avoid unnecessary memory allocations.
 func (m *FuzzyART) min(A, B, fuzzyIntersection []float64) {
 	for i := range A {
 		if A[i] < B[i] {
@@ -120,8 +119,7 @@ func (m *FuzzyART) sum(arr []float64) (norm float64) {
 
 // choice compute the choice function.
 // Calculates the activation of a category based on the input vector.
-// The fuzzyIntersection slice s passed by reference
-// to avoid unnecessary memory allocations.
+// The fuzzyIntersection slice s passed by reference to avoid unnecessary memory allocations.
 func (m *FuzzyART) choice(I, W, fuzzyIntersection []float64) (choice float64, fiNorm float64) {
 	m.min(I, W, fuzzyIntersection)
 	fiNorm = m.sum(fuzzyIntersection)
@@ -179,8 +177,8 @@ func (m *FuzzyART) categoryChoices(I []float64) (jList []int, fiList [][]float64
 
 	// Sort category indices by activation values in descending order
 	sort.SliceStable(jList, func(i, j int) bool {
-		// In case of equal activation values, sort by category index.
-		// Older categories must have the priority.
+		// In case of equal activation values, sort by category index,
+		// because older categories must have the priority.
 		if T[jList[i]] == T[jList[j]] {
 			return jList[i] < jList[j]
 		}
@@ -192,7 +190,7 @@ func (m *FuzzyART) categoryChoices(I []float64) (jList []int, fiList [][]float64
 
 // match computes the match function.
 // The match function calculates the resonance between the input vector and a category.
-// The resonance is the ratio of the fuzzy intersection norm to the L1 norm of the input vector.
+// The resonance is the ratio of the fuzzy intersection L1 norm to the input vector L1 norm.
 func (m *FuzzyART) match(fiNorm, iNorm float64) float64 {
 	if fiNorm == 0 && iNorm == 0 {
 		return 1
@@ -205,16 +203,17 @@ func (m *FuzzyART) match(fiNorm, iNorm float64) float64 {
 // If the best matching category passes the vigilance test (>= rho),
 // its weights are updated to move closer to the input vector, facilitating learning.
 // If it fails, the category is inhibited (temporarily ignored), and the next best category is tested,
-// continuing until a suitable category is found or all are exhausted.
+// continuing until a suitable category is found or all are exhausted
+// in which case a new category is created.
 func (m *FuzzyART) resonateOrReset(
 	I []float64,
-	JList []int,
+	jList []int,
 	fiList [][]float64,
 	fiNormList []float64,
 ) (categoryWeights []float64, categoryIndex int) {
 	iNorm := m.sum(I)
 
-	for _, j := range JList {
+	for _, j := range jList {
 		resonance := m.match(fiNormList[j], iNorm)
 		if resonance >= m.rho {
 			newW := make([]float64, len(m.W[j]))
@@ -237,9 +236,6 @@ func (m *FuzzyART) resonateOrReset(
 // recover returns the fuzzy intersection slices to the pool for reuse.
 func (m *FuzzyART) recover(fiList [][]float64) {
 	for _, fi := range fiList {
-		if fi == nil {
-			break
-		}
 		m.fiPool.Put(fi)
 	}
 }
@@ -262,6 +258,7 @@ func (m *FuzzyART) Infer(I []float64, learn bool) ([]float64, int) {
 	if !learn {
 		return m.W[jList[0]], jList[0]
 	}
+
 	return m.resonateOrReset(I, jList, fiList, fiNormList)
 }
 
