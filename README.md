@@ -2,7 +2,7 @@
 
 This repository contains a highly optimized implementation of the Fuzzy ART algorithm, part of the Adaptive Resonance Theory (ART) algorithms family developed by Stephen Grossberg and Gail Carpenter.
 
-Depending on your CPU, this implementation **can be 15 to 30 times faster than existing Python implementations**.
+Depending on your CPU, this code **can be 15 to 30 times faster than existing Python implementations**.
 
 ## Features
 - **Unsupervised Learning**: Efficient learning with a single pass.
@@ -27,16 +27,20 @@ import (
 )
 
 func main() {
-    // Create a new Fuzzy ART model
-    model := art.NewFuzzyART(5, 0.9, 0.00000001, 1)
+	// Create a new Fuzzy ART model
+	model := art.NewFuzzyART(5, 0.9, 0.00000001, 1)
 
-    // Train the model with a sample
-    category, categoryIndex := model.Train([]float64{0.1, 0.2, 0.3, 0.4, 0.5})
+	// Prepare an input sample
+	input := []float64{0.1, 0.2, 0.3, 0.4, 0.5}
+	
+	// Train the model with a sample
+	category, categoryIndex := model.Train(input)
 
-    // Test the model with a sample
-    inferredCategory, inferredCategoryIndex := model.Infer([]float64{0.1, 0.2, 0.3, 0.4, 0.5}, false)
+	// Test the model with a sample
+	inferredCategory, inferredCategoryIndex := model.Infer(input, false)
 
-    fmt.Printf("Matched: %t\n", categoryIndex == inferredCategoryIndex)
+	fmt.Printf("Matched: %t\n", categoryIndex == inferredCategoryIndex)
+}
 ```
 
 ## Run the example
