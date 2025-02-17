@@ -8,11 +8,10 @@ import (
 )
 
 type FuzzyART struct {
-	workerPoolSize int
-	workerPool     chan struct{}
-	batchSize      int
-	wg             sync.WaitGroup
-	fiPool         *sync.Pool
+	workerPool chan struct{}
+	batchSize  int
+	wg         sync.WaitGroup
+	fiPool     *sync.Pool
 
 	// Vigilance parameter - controls category granularity
 	// Recommended value: 0.8
@@ -60,25 +59,19 @@ func New(inputLen int, rho float64, alpha float64, beta float64) (*FuzzyART, err
 		return nil, fmt.Errorf("learning rate (beta) must be between 0 and 1, got %f", beta)
 	}
 
-	workerPoolSize := runtime.NumCPU()
-	batchSize := 8
-
-	fuzzyIntersectionsPool := &sync.Pool{
-		New: func() interface{} {
-			return make([]float64, inputLen*2)
-		},
-	}
-
 	return &FuzzyART{
-		workerPoolSize: workerPoolSize,
-		workerPool:     make(chan struct{}, workerPoolSize),
-		batchSize:      batchSize,
-		wg:             sync.WaitGroup{},
-		fiPool:         fuzzyIntersectionsPool,
-		rho:            rho,
-		alpha:          alpha,
-		beta:           beta,
-		W:              make([][]float64, 0),
+		workerPool: make(chan struct{}, runtime.NumCPU()),
+		batchSize:  16,
+		wg:         sync.WaitGroup{},
+		fiPool: &sync.Pool{
+			New: func() interface{} {
+				return make([]float64, inputLen*2)
+			},
+		},
+		rho:   rho,
+		alpha: alpha,
+		beta:  beta,
+		W:     make([][]float64, 0),
 	}, nil
 }
 
