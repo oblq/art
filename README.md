@@ -11,10 +11,9 @@ This repository contains a highly optimized implementation of the Fuzzy ART algo
 ## Why Go?
 Existing Python implementations of Fuzzy ART require significant time to complete training sessions on large datasets.
 
-More than 4 hours are necessary to complete a training session on the full MNIST dataset, even in single thread this code takes an hour less, in parallel _**completes the training in 16 minutes on a MacBook Pro M1 Pro and in less than 9 minutes on a 48-thread Xeon.**_
+More than 4 hours are necessary to complete a training session on the full MNIST dataset, even in single thread this code takes an hour less, in parallel _**completes the training in 16 minutes on a MacBook Pro M1 Pro and in less than 9 minutes on a 48-thread Xeon W-3265M.**_
 
 MacBook Pro M1 Pro: 10 cores, 16 threads, 16GB RAM:
-
 ![](./resources/MacbookPro_M1_Pro.png)
 
 ## Performance Optimization
@@ -24,7 +23,38 @@ This implementation utilizes:
 
 Further optimizations may be possible. Detailed profiling of the code is planned for future enhancements, but current results are satisfactory.
 
+## Installation
+
+```bash
+go get github.com/oblq/art
+```
+
 ## Usage
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/oblq/art"
+)
+
+func main() {
+    // Create a new Fuzzy ART model
+    model := art.NewFuzzyART(5, 0.9, 0.00000001, 1)
+
+    // Train the model with a sample
+    category, categoryIndex := model.Train([]float64{0.1, 0.2, 0.3, 0.4, 0.5})
+
+    // Test the model with a sample
+    inferredCategory, inferredCategoryIndex := model.Infer([]float64{0.1, 0.2, 0.3, 0.4, 0.5}, false)
+
+    fmt.Printf("Matched: %t\n", categoryIndex == inferredCategoryIndex)
+```
+
+## Run the example
+
+If you cloned the project you can run the included example.
 
 ### Download MNIST Dataset
 Run the following makefile target to download the MNIST dataset:
