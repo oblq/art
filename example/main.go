@@ -30,7 +30,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	model, err := art.New(28*28, 0.9, 0.01, 1)
+	model, err := art.New(28*28, 0.9, 0.00000001, 1)
 	//model, err := art.New(28*28, 0.86, 0.05, 0.9)
 	if err != nil {
 		log.Fatal(err)
