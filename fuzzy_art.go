@@ -46,6 +46,25 @@ type FuzzyART struct {
 
 	// Weight matrix - stores category prototypes
 	W [][]float64
+
+	// Pruning ---------------------------------------------------------------------------------------------------------
+
+	// confidenceDecay determine the confidence erosion
+	// At a chosen interval, the confidence value of each recognition category depreciates towards 0.
+	// 0.005 is a good start.
+	confidenceDecay float64
+
+	// confidenceReinforcement determine the confidence reinforcement
+	// Whenever a correct prediction is made the relative category confidence is increased towards 1.
+	// 0.5 is a good start.
+	confidenceReinforcement float64
+
+	// confidenceThreshold determine when a category should be pruned
+	// 0.05 is a good start.
+	confidenceThreshold float64
+
+	// confidenceMap track the confidence values for categories
+	confidenceMap []float64
 }
 
 func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*FuzzyART, error) {
@@ -68,10 +87,14 @@ func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*Fuzzy
 				return make([]float64, inputLen*2)
 			},
 		},
-		rho:   rho,
-		alpha: alpha,
-		beta:  beta,
-		W:     make([][]float64, 0),
+		rho:                     rho,
+		alpha:                   alpha,
+		beta:                    beta,
+		W:                       make([][]float64, 0),
+		confidenceDecay:         0.0005,
+		confidenceReinforcement: 0.5,
+		confidenceThreshold:     0.05,
+		confidenceMap:           make([]float64, 0),
 	}, nil
 }
 
@@ -171,9 +194,51 @@ func (m *FuzzyART) categoryChoices(I []float64) (jList []int, fiList [][]float64
 
 	// Create a list of category indices
 	jList = make([]int, len(T))
+	// In the meantime also update confidence score
+	pruningList := make([]int, 0)
 	for i := range jList {
 		jList[i] = i
+
+		// confidence erosion
+		m.confidenceMap[i] -= m.confidenceDecay * m.confidenceMap[i]
+		// add elements to prune to the list
+		if m.confidenceMap[i] < m.confidenceThreshold {
+			pruningList = append(pruningList, i)
+		}
 	}
+
+	// Create a map to track which indices should be pruned
+	pruneMask := make(map[int]bool)
+	for _, idx := range pruningList {
+		pruneMask[idx] = true
+	}
+
+	// Create new slices without the pruned elements
+	newW := make([][]float64, 0, len(m.W)-len(pruningList))
+	newConfidenceMap := make([]float64, 0, len(m.confidenceMap)-len(pruningList))
+	newT := make([]float64, 0, len(T)-len(pruningList))
+	newFiList := make([][]float64, 0, len(fiList)-len(pruningList))
+	newFiNormList := make([]float64, 0, len(fiNormList)-len(pruningList))
+	newJList := make([]int, 0, len(jList)-len(pruningList))
+
+	for i := range m.W {
+		if !pruneMask[i] {
+			newW = append(newW, m.W[i])
+			newConfidenceMap = append(newConfidenceMap, m.confidenceMap[i])
+			newT = append(newT, T[i])
+			newFiList = append(newFiList, fiList[i])
+			newFiNormList = append(newFiNormList, fiNormList[i])
+			newJList = append(newJList, len(newJList)) // Use new index
+		}
+	}
+
+	// Update the original slices
+	m.W = newW
+	m.confidenceMap = newConfidenceMap
+	T = newT
+	fiList = newFiList
+	fiNormList = newFiNormList
+	jList = newJList
 
 	// Sort category indices by activation values in descending order
 	sort.SliceStable(jList, func(i, j int) bool {
@@ -184,7 +249,6 @@ func (m *FuzzyART) categoryChoices(I []float64) (jList []int, fiList [][]float64
 		}
 		return T[jList[i]] > T[jList[j]]
 	})
-
 	return
 }
 
@@ -222,6 +286,7 @@ func (m *FuzzyART) resonateOrReset(
 			}
 
 			m.W[j] = newW
+			m.confidenceMap[j] += m.confidenceReinforcement * m.confidenceMap[j]
 			return newW, j
 		}
 	}
@@ -229,6 +294,8 @@ func (m *FuzzyART) resonateOrReset(
 	// If no category meets the vigilance criterion, create a new category.
 	// Fast commitment option, directly copy the input vector as the new category.
 	m.W = append(m.W, I)
+	// also add the relative confidence score, starting at 1.0
+	m.confidenceMap = append(m.confidenceMap, 1)
 
 	return m.W[len(m.W)-1], len(m.W) - 1
 }
