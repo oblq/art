@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	TRAIN_SAMPLES_PER_DIGIT = -1
-	TEST_SAMPLES_PER_DIGIT  = -1
+	TRAIN_SAMPLES_PER_DIGIT = 1000
+	TEST_SAMPLES_PER_DIGIT  = 100
 
 	progressBarWidth = 60
 )
@@ -37,6 +37,8 @@ func main() {
 	defer model.Close()
 
 	test(trainData, testData, model.Train, model.Infer)
+
+	fmt.Printf("Learned categories: %d\n", len(model.W)-len(model.PruneMask))
 }
 
 func test(

@@ -49,6 +49,8 @@ type FuzzyART struct {
 
 	// Pruning ---------------------------------------------------------------------------------------------------------
 
+	pruningEnabled bool
+
 	// confidenceDecay determine the confidence erosion
 	// At a chosen interval, the confidence value of each recognition category depreciates towards 0.
 	// 0.005 is a good start.
@@ -65,6 +67,7 @@ type FuzzyART struct {
 
 	// confidenceMap track the confidence values for categories
 	confidenceMap []float64
+	PruneMask     map[int]bool
 }
 
 func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*FuzzyART, error) {
@@ -91,10 +94,12 @@ func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*Fuzzy
 		alpha:                   alpha,
 		beta:                    beta,
 		W:                       make([][]float64, 0),
+		pruningEnabled:          true,
 		confidenceDecay:         0.0005,
 		confidenceReinforcement: 0.5,
-		confidenceThreshold:     0.05,
+		confidenceThreshold:     0.025,
 		confidenceMap:           make([]float64, 0),
+		PruneMask:               make(map[int]bool),
 	}, nil
 }
 
@@ -182,6 +187,9 @@ func (m *FuzzyART) categoryChoices(I []float64) (jList []int, fiList [][]float64
 
 			for i, category := range categories {
 				globalIndex := startIndex + i
+				if _, ok := m.PruneMask[globalIndex]; ok {
+					continue
+				}
 				// Get a slice from the pool, rotating already allocated slices for efficiency
 				fuzzyIntersection := m.fiPool.Get().([]float64)
 				T[globalIndex], fiNormList[globalIndex] = m.choice(input, category, fuzzyIntersection)
@@ -195,50 +203,53 @@ func (m *FuzzyART) categoryChoices(I []float64) (jList []int, fiList [][]float64
 	// Create a list of category indices
 	jList = make([]int, len(T))
 	// In the meantime also update confidence score
-	pruningList := make([]int, 0)
+	//pruningList := make([]int, 0)
 	for i := range jList {
 		jList[i] = i
 
-		// confidence erosion
-		m.confidenceMap[i] -= m.confidenceDecay * m.confidenceMap[i]
-		// add elements to prune to the list
-		if m.confidenceMap[i] < m.confidenceThreshold {
-			pruningList = append(pruningList, i)
+		if m.pruningEnabled {
+			// confidence erosion
+			m.confidenceMap[i] -= m.confidenceDecay * m.confidenceMap[i]
+			// add elements to prune to the list
+			if m.confidenceMap[i] < m.confidenceThreshold {
+				//pruningList = append(pruningList, i)
+				m.PruneMask[i] = true
+			}
 		}
 	}
 
 	// Create a map to track which indices should be pruned
-	pruneMask := make(map[int]bool)
-	for _, idx := range pruningList {
-		pruneMask[idx] = true
-	}
+	//PruneMask := make(map[int]bool)
+	//for _, idx := range pruningList {
+	//	PruneMask[idx] = true
+	//}
 
 	// Create new slices without the pruned elements
-	newW := make([][]float64, 0, len(m.W)-len(pruningList))
-	newConfidenceMap := make([]float64, 0, len(m.confidenceMap)-len(pruningList))
-	newT := make([]float64, 0, len(T)-len(pruningList))
-	newFiList := make([][]float64, 0, len(fiList)-len(pruningList))
-	newFiNormList := make([]float64, 0, len(fiNormList)-len(pruningList))
-	newJList := make([]int, 0, len(jList)-len(pruningList))
+	//newW := make([][]float64, 0, len(m.W)-len(pruningList))
+	//newConfidenceMap := make([]float64, 0, len(m.confidenceMap)-len(pruningList))
+	//newT := make([]float64, 0, len(T)-len(pruningList))
+	//newFiList := make([][]float64, 0, len(fiList)-len(pruningList))
+	//newFiNormList := make([]float64, 0, len(fiNormList)-len(pruningList))
+	//newJList := make([]int, 0, len(jList)-len(pruningList))
 
-	for i := range m.W {
-		if !pruneMask[i] {
-			newW = append(newW, m.W[i])
-			newConfidenceMap = append(newConfidenceMap, m.confidenceMap[i])
-			newT = append(newT, T[i])
-			newFiList = append(newFiList, fiList[i])
-			newFiNormList = append(newFiNormList, fiNormList[i])
-			newJList = append(newJList, len(newJList)) // Use new index
-		}
-	}
-
-	// Update the original slices
-	m.W = newW
-	m.confidenceMap = newConfidenceMap
-	T = newT
-	fiList = newFiList
-	fiNormList = newFiNormList
-	jList = newJList
+	//for i := range m.W {
+	//	if !PruneMask[i] {
+	//		newW = append(newW, m.W[i])
+	//		newConfidenceMap = append(newConfidenceMap, m.confidenceMap[i])
+	//		newT = append(newT, T[i])
+	//		newFiList = append(newFiList, fiList[i])
+	//		newFiNormList = append(newFiNormList, fiNormList[i])
+	//		newJList = append(newJList, len(newJList)) // Use new index
+	//	}
+	//}
+	//
+	//// Update the original slices
+	//m.W = newW
+	//m.confidenceMap = newConfidenceMap
+	//T = newT
+	//fiList = newFiList
+	//fiNormList = newFiNormList
+	//jList = newJList
 
 	// Sort category indices by activation values in descending order
 	sort.SliceStable(jList, func(i, j int) bool {
@@ -278,6 +289,12 @@ func (m *FuzzyART) resonateOrReset(
 	iNorm := m.sum(I)
 
 	for _, j := range jList {
+		if m.pruningEnabled {
+			if _, ok := m.PruneMask[j]; ok {
+				continue
+			}
+		}
+
 		resonance := m.match(fiNormList[j], iNorm)
 		if resonance >= m.rho {
 			newW := make([]float64, len(m.W[j]))
@@ -286,7 +303,9 @@ func (m *FuzzyART) resonateOrReset(
 			}
 
 			m.W[j] = newW
-			m.confidenceMap[j] += m.confidenceReinforcement * m.confidenceMap[j]
+			if m.pruningEnabled {
+				m.confidenceMap[j] += m.confidenceReinforcement * m.confidenceMap[j]
+			}
 			return newW, j
 		}
 	}
@@ -303,6 +322,9 @@ func (m *FuzzyART) resonateOrReset(
 // recover returns the fuzzy intersection slices to the pool for reuse.
 func (m *FuzzyART) recover(fiList [][]float64) {
 	for _, fi := range fiList {
+		if fi == nil {
+			continue
+		}
 		m.fiPool.Put(fi)
 	}
 }
