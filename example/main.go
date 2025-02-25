@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	TRAIN_SAMPLES_PER_DIGIT = 1000
-	TEST_SAMPLES_PER_DIGIT  = 100
+	TRAIN_SAMPLES_PER_DIGIT = -1
+	TEST_SAMPLES_PER_DIGIT  = -1
 
 	progressBarWidth = 60
 )
@@ -30,7 +30,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	model, err := art.NewFuzzyART(28*28, 0.9, 0.00000001, 1)
+	model, err := art.NewFuzzyART(28*28, 0.905, 0.00000001, 1)
 	if err != nil {
 		log.Fatal(err)
 	}

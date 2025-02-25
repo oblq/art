@@ -95,9 +95,9 @@ func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*Fuzzy
 		beta:                    beta,
 		W:                       make([][]float64, 0),
 		pruningEnabled:          true,
-		confidenceDecay:         0.0005,
-		confidenceReinforcement: 0.5,
-		confidenceThreshold:     0.025,
+		confidenceDecay:         0.0001,
+		confidenceReinforcement: 1,
+		confidenceThreshold:     0.0055,
 		confidenceMap:           make([]float64, 0),
 		PruneMask:               make(map[int]bool),
 	}, nil
@@ -218,39 +218,6 @@ func (m *FuzzyART) categoryChoices(I []float64) (jList []int, fiList [][]float64
 		}
 	}
 
-	// Create a map to track which indices should be pruned
-	//PruneMask := make(map[int]bool)
-	//for _, idx := range pruningList {
-	//	PruneMask[idx] = true
-	//}
-
-	// Create new slices without the pruned elements
-	//newW := make([][]float64, 0, len(m.W)-len(pruningList))
-	//newConfidenceMap := make([]float64, 0, len(m.confidenceMap)-len(pruningList))
-	//newT := make([]float64, 0, len(T)-len(pruningList))
-	//newFiList := make([][]float64, 0, len(fiList)-len(pruningList))
-	//newFiNormList := make([]float64, 0, len(fiNormList)-len(pruningList))
-	//newJList := make([]int, 0, len(jList)-len(pruningList))
-
-	//for i := range m.W {
-	//	if !PruneMask[i] {
-	//		newW = append(newW, m.W[i])
-	//		newConfidenceMap = append(newConfidenceMap, m.confidenceMap[i])
-	//		newT = append(newT, T[i])
-	//		newFiList = append(newFiList, fiList[i])
-	//		newFiNormList = append(newFiNormList, fiNormList[i])
-	//		newJList = append(newJList, len(newJList)) // Use new index
-	//	}
-	//}
-	//
-	//// Update the original slices
-	//m.W = newW
-	//m.confidenceMap = newConfidenceMap
-	//T = newT
-	//fiList = newFiList
-	//fiNormList = newFiNormList
-	//jList = newJList
-
 	// Sort category indices by activation values in descending order
 	sort.SliceStable(jList, func(i, j int) bool {
 		// In case of equal activation values, sort by category index,
@@ -309,6 +276,18 @@ func (m *FuzzyART) resonateOrReset(
 			return newW, j
 		}
 	}
+
+	//if len(m.PruneMask) > 0 {
+	//	prunedIndex := 0
+	//	for prunedIndex, _ = range m.PruneMask {
+	//		m.W[prunedIndex] = I
+	//		m.confidenceMap[prunedIndex] = 1
+	//		break
+	//	}
+	//
+	//	delete(m.PruneMask, prunedIndex)
+	//	return I, prunedIndex
+	//}
 
 	// If no category meets the vigilance criterion, create a new category.
 	// Fast commitment option, directly copy the input vector as the new category.
