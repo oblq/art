@@ -146,14 +146,15 @@ func (m *FuzzyART) categoryChoices(I []float64) (jList []int, fiList [][]float64
 		fiList []float64
 	}
 
-	// Goroutine to write to the slice
-	updates := make(chan update)
-
+	updates := make(chan []update, len(m.workerPool)*m.batchSize)
+	defer close(updates)
 	go func() {
-		for u := range updates {
-			T[u.index] = u.t
-			fiNormList[u.index] = u.fiNorm
-			fiList[u.index] = u.fiList
+		for uList := range updates {
+			for _, u := range uList {
+				T[u.index] = u.t
+				fiNormList[u.index] = u.fiNorm
+				fiList[u.index] = u.fiList
+			}
 			m.wg.Done()
 		}
 	}()
@@ -173,20 +174,19 @@ func (m *FuzzyART) categoryChoices(I []float64) (jList []int, fiList [][]float64
 			defer func() {
 				// release the worker
 				<-m.workerPool
-				//m.wg.Done()
 			}()
 
+			uList := make([]update, len(categories))
 			for i, category := range categories {
 				globalIndex := startIndex + i
-				// Get a slice from the pool, rotating already allocated slices for efficiency
-				//fuzzyIntersection := m.fiPool.Get().([]float64)
-				//T[globalIndex], fiNormList[globalIndex] = m.choice(input, category, fuzzyIntersection)
-				//fiList[globalIndex] = fuzzyIntersection
-
-				u := update{index: globalIndex, fiList: m.fiPool.Get().([]float64)}
+				u := update{
+					index:  globalIndex,
+					fiList: m.fiPool.Get().([]float64),
+				}
 				u.t, u.fiNorm = m.choice(input, category, u.fiList)
-				updates <- u
+				uList[i] = u
 			}
+			updates <- uList
 		}(I, m.W[start:end], start)
 	}
 
