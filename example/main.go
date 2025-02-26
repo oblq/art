@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"time"
 
+	_ "net/http/pprof"
+
 	"art"
 )
 
@@ -20,6 +22,10 @@ const (
 )
 
 func main() {
+	//go func() {
+	//	log.Fatal(http.ListenAndServe("0.0.0.0:5555", nil))
+	//}()
+
 	trainData, err := getData("./mnist/mnist_train.csv", TRAIN_SAMPLES_PER_DIGIT, true)
 	if err != nil {
 		log.Fatal(err)

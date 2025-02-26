@@ -60,29 +60,30 @@ func (f *FuzzyARTMAP) ComplementCode(data []float64) []float64 {
 	return complemented
 }
 
+//for j := 0; j < len(f.W); j++ {
+//	numerator := 0.0
+//	denominator := 0.0
+//	for i := 0; i < len(a); i++ {
+//		numerator += math.Min(a[i], f.W[j][i])
+//		denominator += f.W[j][i]
+//	}
+//	t[j] = numerator / (f.Alpha + denominator)
+//}
+//return t
+
+//type CategoryActivation struct {
+//	index int
+//	val   float64
+//}
+//tChan := make(chan CategoryActivation)
+//go func() {
+//	for categoryActivation := range tChan {
+//		t[categoryActivation.index] = categoryActivation.val
+//	}
+//}()
+
 func (f *FuzzyARTMAP) ChoiceFunction(a []float64) []float64 {
 	t := make([]float64, len(f.W))
-	//for j := 0; j < len(f.W); j++ {
-	//	numerator := 0.0
-	//	denominator := 0.0
-	//	for i := 0; i < len(a); i++ {
-	//		numerator += math.Min(a[i], f.W[j][i])
-	//		denominator += f.W[j][i]
-	//	}
-	//	t[j] = numerator / (f.Alpha + denominator)
-	//}
-	//return t
-
-	//type CategoryActivation struct {
-	//	index int
-	//	val   float64
-	//}
-	//tChan := make(chan CategoryActivation)
-	//go func() {
-	//	for categoryActivation := range tChan {
-	//		t[categoryActivation.index] = categoryActivation.val
-	//	}
-	//}()
 
 	for start := 0; start < len(f.W); start += f.batchSize {
 		end := start + f.batchSize
@@ -112,8 +113,9 @@ func (f *FuzzyARTMAP) ChoiceFunction(a []float64) []float64 {
 					//numerator += math.Max(0, input[i]-category[i])
 					denominator += category[i]
 				}
+				activation := numerator / (f.Alpha + denominator)
+				t[globalIndex] = activation
 				//t[globalIndex] = numerator + (1-f.Alpha)*(float64(f.M)-denominator)
-				t[globalIndex] = numerator / (f.Alpha + denominator)
 				//tChan <- CategoryActivation{
 				//	index: globalIndex,
 				//	//val:   numerator / (f.Alpha + denominator),
@@ -135,11 +137,10 @@ func (f *FuzzyARTMAP) UpdateWeights(j int, a []float64) {
 }
 
 func (f *FuzzyARTMAP) Fit(a []float64, class string) {
-	k := class
 	a = f.ComplementCode(a)
 
 	if len(f.W) == 0 {
-		f.addNewCategory(a, k)
+		f.addNewCategory(a, class)
 		return
 	}
 
@@ -170,7 +171,7 @@ func (f *FuzzyARTMAP) Fit(a []float64, class string) {
 
 		resonance := f.MatchFunction(a, j)
 		if resonance >= f.Rho {
-			if f.checkCategoryMatch(j, k) {
+			if f.checkCategoryMatch(j, class) {
 				f.UpdateWeights(j, a)
 				match = true
 				break
@@ -181,7 +182,7 @@ func (f *FuzzyARTMAP) Fit(a []float64, class string) {
 	}
 
 	if !match {
-		f.addNewCategory(a, k)
+		f.addNewCategory(a, class)
 	}
 
 	//for _, j := range jList {

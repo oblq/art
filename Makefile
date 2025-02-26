@@ -5,4 +5,4 @@ get-mnist:
 
 run-example:
 	@go mod tidy
-	@cd example && go run .
+	@cd example && go run -race .
