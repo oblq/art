@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	TRAIN_SAMPLES_PER_DIGIT = -1
-	TEST_SAMPLES_PER_DIGIT  = -1
+	TRAIN_SAMPLES_PER_DIGIT = 400
+	TEST_SAMPLES_PER_DIGIT  = 40
 
 	progressBarWidth = 60
 )
@@ -30,24 +30,26 @@ func main() {
 		log.Fatal(err)
 	}
 
-	model, err := art.NewFuzzyART(28*28, 0.9, 0.00000001, 1)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer model.Close()
+	//model, err := art.NewFuzzyART(28*28, 0.9, 0.00000001, 1)
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	model := art.NewFuzzyARTMAP(28*28, 0.9, 1e-8, 1.0)
+	//defer model.Close()
 
-	test(trainData, testData, model.Train, model.Infer)
+	test(trainData, testData, model.Fit, model.Predict)
+	fmt.Printf("Learned categories: %d\n", len(model.W))
 }
 
 func test(
 	trainData,
 	testData map[string][][]float64,
-	trainFunc func([]float64) ([]float64, int),
-	inferFunc func([]float64, bool) ([]float64, int),
+	fitFunc func([]float64, string),
+	predictFunc func([]float64) ([]float64, string),
 ) {
 	startTime := time.Now()
 
-	category2Digit := make(map[int]int)
+	//category2Digit := make(map[int]int)
 
 	epochs := 1
 	totalSamples := 0
@@ -62,16 +64,17 @@ func test(
 		for d := range 10 {
 			digitData := trainData[strconv.Itoa(d)]
 			for i := range digitData {
-				_, k := trainFunc(digitData[i])
-				if prevCategoryDigit, ok := category2Digit[k]; ok {
-					if prevCategoryDigit != d {
-						//log.Printf("category %d identify at least two digits: %d and %d\n",
-						//	k, prevCategoryDigit, d)
-						//category2Digit[k] = d
-					}
-				} else {
-					category2Digit[k] = d
-				}
+				fitFunc(digitData[i], strconv.Itoa(d))
+				//_, k := fitFunc(digitData[i])
+				//if prevCategoryDigit, ok := category2Digit[k]; ok {
+				//	if prevCategoryDigit != d {
+				//		//log.Printf("category %d identify at least two digits: %d and %d\n",
+				//		//	k, prevCategoryDigit, d)
+				//		//category2Digit[k] = d
+				//	}
+				//} else {
+				//	category2Digit[k] = d
+				//}
 				pb.Increment()
 			}
 		}
@@ -95,10 +98,13 @@ func test(
 	for digit := range 10 {
 		samples := testData[strconv.Itoa(digit)]
 		for _, sample := range samples {
-			_, k := inferFunc(sample, false)
-			if digit == category2Digit[k] {
+			_, k := predictFunc(sample)
+			if strconv.Itoa(digit) == k {
 				exactResults++
 			}
+			//if digit == category2Digit[k] {
+			//	exactResults++
+			//}
 			pbTest.Increment()
 		}
 	}
@@ -109,7 +115,7 @@ func test(
 	fmt.Printf("Accuracy: %.1f%%\n", precision*100)
 
 	totalTime := time.Since(startTime)
-	fmt.Printf("Total execution time: %s, learned categories: %d\n", totalTime.Round(time.Second), len(category2Digit))
+	fmt.Printf("Total execution time: %s\n", totalTime.Round(time.Second))
 }
 
 func getData(path string, samplesPerDigit int, shuffle bool) (map[string][][]float64, error) {
