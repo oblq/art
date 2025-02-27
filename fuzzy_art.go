@@ -127,11 +127,18 @@ func (m *FuzzyART) choice(I, W, fuzzyIntersection []float64) (choice float64, fi
 	return
 }
 
+type activation struct {
+	index  int
+	t      float64
+	fiNorm float64
+	fiList []float64
+}
+
 // categoryChoices implements the recognition field functionality
 // by computing activation values for each category based on the input vector.
 // The sorting process also implicitly handles lateral inhibition by prioritizing
 // the category with the highest activation, thereby inhibiting others.
-func (m *FuzzyART) categoryChoices(I []float64) (jList []int, fiList [][]float64, fiNormList []float64) {
+func (m *FuzzyART) categoryChoices(A []float64) (jList []int, fiList [][]float64, fiNormList []float64) {
 	// Categories activations
 	T := make([]float64, len(m.W))
 	// Fuzzy intersections
@@ -139,21 +146,14 @@ func (m *FuzzyART) categoryChoices(I []float64) (jList []int, fiList [][]float64
 	// Fuzzy intersection norms
 	fiNormList = make([]float64, len(m.W))
 
-	type update struct {
-		index  int
-		t      float64
-		fiNorm float64
-		fiList []float64
-	}
-
-	updates := make(chan []update, len(m.workerPool)*m.batchSize)
-	defer close(updates)
+	activationsCh := make(chan []activation, len(m.workerPool)*m.batchSize)
+	defer close(activationsCh)
 	go func() {
-		for uList := range updates {
-			for _, u := range uList {
-				T[u.index] = u.t
-				fiNormList[u.index] = u.fiNorm
-				fiList[u.index] = u.fiList
+		for activations := range activationsCh {
+			for _, a := range activations {
+				T[a.index] = a.t
+				fiNormList[a.index] = a.fiNorm
+				fiList[a.index] = a.fiList
 			}
 			m.wg.Done()
 		}
@@ -176,18 +176,17 @@ func (m *FuzzyART) categoryChoices(I []float64) (jList []int, fiList [][]float64
 				<-m.workerPool
 			}()
 
-			uList := make([]update, len(categories))
+			activations := make([]activation, len(categories))
 			for i, category := range categories {
-				globalIndex := startIndex + i
-				u := update{
-					index:  globalIndex,
+				u := activation{
+					index:  startIndex + i,
 					fiList: m.fiPool.Get().([]float64),
 				}
 				u.t, u.fiNorm = m.choice(input, category, u.fiList)
-				uList[i] = u
+				activations[i] = u
 			}
-			updates <- uList
-		}(I, m.W[start:end], start)
+			activationsCh <- activations
+		}(A, m.W[start:end], start)
 	}
 
 	m.wg.Wait()

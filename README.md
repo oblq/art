@@ -13,7 +13,7 @@ Depending on your CPU, this code **can be 15 to 30 times faster than existing Py
 ## Installation
 
 ```bash
-go get github.com/oblq/art
+go get -u github.com/oblq/art
 ```
 
 ## Usage
