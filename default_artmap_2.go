@@ -37,7 +37,6 @@ func NewDefaultARTMAP2(inputDim, numCategories int) *DefaultARTMAP2 {
 		CAMRulePower:     1.0,
 		M:                inputDim,
 		NumCategories:    numCategories,
-		C:                0, // Start with no coding nodes
 		Weights:          make([][]float64, 0),
 		OutputCategories: make([][]float64, 0),
 		MapField:         []int{},
@@ -64,6 +63,7 @@ func (am *DefaultARTMAP2) addNewCategory(newWeights []float64, targetClass int) 
 type Activation struct {
 	j                    int
 	val                  float64
+	distributedVal       float64
 	fuzzyIntersection    []float64
 	fuzzyIntersectionSum float64
 }
@@ -112,10 +112,6 @@ func (am *DefaultARTMAP2) signalsToCommittedNodes(A []float64) []Activation {
 	return T
 }
 
-func (am *DefaultARTMAP2) checkCategoryMatch(j int, k int) bool {
-	return am.MapField[j] == k
-}
-
 // B.11. Learning: Update coding weights
 func (am *DefaultARTMAP2) updateWeights(A []float64, t Activation) {
 	for i := 0; i < 2*am.M; i++ {
@@ -133,17 +129,37 @@ func (am *DefaultARTMAP2) Fit(a []float64, k int) {
 		return
 	}
 
+	// Winner-take-all coding during training
+	// Find the best matching existing category or create a new one
+
 	T := am.signalsToCommittedNodes(A)
+
+	matched := false
 
 	// B.9. Search for a coding node J that meets the matching
 	// criterion and predicts the correct output class K
 	for _, t := range T {
-		// B.9.a. Code: For the next sorted coding node that meets the matching criterion
+		// B.9.a. Code: For the next sorted coding node that meets
+		// the matching criterion
 		resonance := t.fuzzyIntersectionSum / float64(am.M)
 		if resonance >= am.Rho {
-			if am.checkCategoryMatch(t.j, k) {
+			// B.9.b. Output class prediction
+			J := am.MapField[t.j]
+			if J == k {
+				// B.9.c. Correct prediction
+
+				// B.11. Learning: Update coding weights
 				am.updateWeights(A, t)
-				//match = true
+
+				// Distributed next-a test (specific to Default ARTMAP 2)
+				// Test if the network would correctly classify the a with distributed val
+				prediction := am.Predict(A)
+				if prediction != k {
+					am.Rho = resonance + am.Epsilon
+					continue
+				}
+
+				matched = true
 				break
 			} else {
 				// B.9.d Match tracking: If the active code J fails to
@@ -154,80 +170,33 @@ func (am *DefaultARTMAP2) Fit(a []float64, k int) {
 		}
 	}
 
-	am.addNewCategory(A, k)
+	if !matched {
+		// B.10. After unsuccessfully searching the sorted list,
+		// add a committed node and return to Step B.4
+		am.addNewCategory(A, k)
+	}
+
 	// B.5. Set vigilance ρ to its baseline value
 	am.Rho = am.RhoBar
-
-	// ---------------------------------------------------------
-
-	// Winner-take-all coding during training
-	// Find the best matching existing category or create a new one
-	//matchFound := false
-	//bestMatch := -1
-	//bestMatchValue := -1.0
-	//
-	//// Calculate activations for all existing coding nodes
-	//for j := 0; j < len(am.Weights); j++ {
-	//	// Choice-by-difference val function
-	//	activation := am.choiceByDifference(A, am.Weights[j])
-	//
-	//	if activation > bestMatchValue {
-	//		// Check vigilance criterion
-	//		match := am.matchesCriterion(A, am.Weights[j])
-	//		if match {
-	//			bestMatchValue = activation
-	//			bestMatch = j
-	//			matchFound = true
-	//		}
-	//	}
-	//}
-	//
-	//// If no match found or prediction is incorrect, create a new category
-	//if !matchFound || am.MapField[bestMatch] != k {
-	//	// Create a new coding node
-	//	bestMatch = len(am.Weights)
-	//	am.C++
-	//	am.Weights = append(am.Weights, A)
-	//	am.MapField = append(am.MapField, k)
-	//} else {
-	//	// Update weights for the matched node (fast learning)
-	//	for i := 0; i < len(A); i++ {
-	//		am.Weights[bestMatch][i] = am.Beta*math.Min(A[i], am.Weights[bestMatch][i]) +
-	//			(1.0-am.Beta)*am.Weights[bestMatch][i]
-	//	}
-	//}
-	//
-	//// Distributed next-a test (specific to Default ARTMAP 2)
-	//// Test if the network would correctly classify the a with distributed val
-	//prediction := am.Predict(a)
-	//if prediction != k {
-	//	// If distributed prediction fails, create a new category
-	//	bestMatch = len(am.Weights)
-	//	am.C++
-	//
-	//	newWeights := make([]float64, len(A))
-	//	copy(newWeights, A)
-	//	am.Weights = append(am.Weights, newWeights)
-	//	am.MapField = append(am.MapField, k)
-	//}
 }
 
 // Predict predicts the class of an input using distributed val
-func (am *DefaultARTMAP2) Predict(input []float64) int {
+func (am *DefaultARTMAP2) Predict(a []float64) int {
 	if len(am.Weights) == 0 {
-		return -1 // No categories learned yet
+		return -1
 	}
 
-	// Complement code the input
-	codedInput := am.ComplementCode(input)
+	A := am.ComplementCode(a)
+
+	T := am.signalsToCommittedNodes(A)
 
 	// Calculate distributed activations using increased-gradient CAM rule
-	activations := am.distributedActivation(codedInput)
+	am.calcDistributedActivation(A, T)
 
 	// Count votes for each category
 	categoryVotes := make([]float64, am.NumCategories)
-	for j := 0; j < len(am.Weights); j++ {
-		categoryVotes[am.MapField[j]] += activations[j]
+	for _, t := range T {
+		categoryVotes[am.MapField[t.j]] += t.distributedVal
 	}
 
 	// Find the category with the highest vote
@@ -243,45 +212,15 @@ func (am *DefaultARTMAP2) Predict(input []float64) int {
 	return predictedClass
 }
 
-//func (am *DefaultARTMAP2) matchesCriterion(input, weights []float64) bool {
-//	// Implement vigilance criterion check
-//	matchScore := 0.0
-//	for i := 0; i < len(input); i++ {
-//		matchScore += math.Min(input[i], weights[i])
-//	}
-//
-//	inputMagnitude := vectorSum(input)
-//	return (matchScore / inputMagnitude) >= am.RhoBar
-//}
-
-func (am *DefaultARTMAP2) distributedActivation(input []float64) []float64 {
-	// Simplified implementation of increased-gradient CAM rule
-	activations := make([]float64, len(am.Weights))
-
-	// Calculate initial activations
-	for j := 0; j < len(am.Weights); j++ {
-		activations[j] = am.choiceByDifference(input, am.Weights[j])
-	}
+func (am *DefaultARTMAP2) calcDistributedActivation(A []float64, T []Activation) {
+	// increased-gradient CAM rule
 
 	// Normalize activations
-	sum := 0.0
-	for j := 0; j < len(am.Weights); j++ {
-		sum += activations[j]
+	totalActivation := 0.0
+	for _, t := range T {
+		totalActivation += t.val
 	}
-
-	if sum > 0 {
-		for j := 0; j < len(am.Weights); j++ {
-			activations[j] /= sum
-		}
+	for _, t := range T {
+		t.distributedVal = t.val / totalActivation
 	}
-
-	return activations
-}
-
-func vectorSum(vector []float64) float64 {
-	sum := 0.0
-	for _, v := range vector {
-		sum += v
-	}
-	return sum
 }
