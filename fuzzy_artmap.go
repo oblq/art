@@ -14,6 +14,7 @@ type FuzzyARTMAP struct {
 	fiPool     *sync.Pool
 
 	M int // Number of features
+
 	//NumClasses      int         // Number of output classes
 	W      [][]float64 // Weight matrix, F2 nodes
 	Alpha  float64     // Choice parameter
