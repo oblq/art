@@ -13,19 +13,19 @@ import (
 )
 
 const (
-	TRAIN_SAMPLES_PER_DIGIT = -1
-	TEST_SAMPLES_PER_DIGIT  = -1
+	TRAIN_SAMPLES_PER_DIGIT = 1000
+	TEST_SAMPLES_PER_DIGIT  = 100
 
 	progressBarWidth = 60
 )
 
 func main() {
-	trainData, err := getData("./mnist/mnist_train.csv", TRAIN_SAMPLES_PER_DIGIT, true)
+	trainData, err := getData("./mnist/mnist_train.csv", TRAIN_SAMPLES_PER_DIGIT, false)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	testData, err := getData("./mnist/mnist_test.csv", TEST_SAMPLES_PER_DIGIT, true)
+	testData, err := getData("./mnist/mnist_test.csv", TEST_SAMPLES_PER_DIGIT, false)
 	if err != nil {
 		log.Fatal(err)
 	}
