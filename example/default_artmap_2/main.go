@@ -9,36 +9,29 @@ import (
 	_ "net/http/pprof"
 
 	"art"
+	"art/example/internal/dataset"
+	"art/example/internal/progress_bar"
 )
 
 const (
-	TRAIN_SAMPLES_PER_DIGIT = 1000
-	TEST_SAMPLES_PER_DIGIT  = 100
+	TRAIN_SAMPLES_PER_DIGIT = 400
+	TEST_SAMPLES_PER_DIGIT  = 40
 
 	progressBarWidth = 60
 )
 
 func main() {
-	//go func() {
-	//	log.Fatal(http.ListenAndServe("0.0.0.0:5555", nil))
-	//}()
-
-	trainData, err := getData("./mnist/mnist_train.csv", TRAIN_SAMPLES_PER_DIGIT, true)
+	trainData, err := dataset.GetData("./mnist/mnist_train.csv", TRAIN_SAMPLES_PER_DIGIT, true)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	testData, err := getData("./mnist/mnist_test.csv", TEST_SAMPLES_PER_DIGIT, false)
+	testData, err := dataset.GetData("./mnist/mnist_test.csv", TEST_SAMPLES_PER_DIGIT, false)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	//model, err := art.NewFuzzyART(28*28, 0.9, 0.00000001, 1)
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	model := art.NewFuzzyARTMAP(28*28, 0.9, 1e-8, 1.0)
-	//defer model.Close()
+	model := art.NewDefaultARTMAP2(28*28, 10) //0.9, 1e-8, 1.0)
 
 	test(trainData, testData, model.Fit, model.Predict)
 	fmt.Printf("Learned categories: %d\n", len(model.W))
@@ -47,12 +40,10 @@ func main() {
 func test(
 	trainData,
 	testData map[string][][]float64,
-	fitFunc func([]float64, string),
-	predictFunc func([]float64) ([]float64, string),
+	fitFunc func([]float64, int),
+	predictFunc func([]float64) int,
 ) {
 	startTime := time.Now()
-
-	//category2Digit := make(map[int]int)
 
 	epochs := 1
 	totalSamples := 0
@@ -61,23 +52,13 @@ func test(
 	}
 
 	fmt.Println("Training progress:")
-	pb := NewProgressBar(epochs*totalSamples, progressBarWidth)
+	pb := progress_bar.New(epochs*totalSamples, progressBarWidth)
 
 	for e := 0; e < epochs; e++ {
 		for d := range 10 {
 			digitData := trainData[strconv.Itoa(d)]
 			for i := range digitData {
-				fitFunc(digitData[i], strconv.Itoa(d))
-				//_, k := fitFunc(digitData[i])
-				//if prevCategoryDigit, ok := category2Digit[k]; ok {
-				//	if prevCategoryDigit != d {
-				//		//log.Printf("category %d identify at least two digits: %d and %d\n",
-				//		//	k, prevCategoryDigit, d)
-				//		//category2Digit[k] = d
-				//	}
-				//} else {
-				//	category2Digit[k] = d
-				//}
+				fitFunc(digitData[i], d)
 				pb.Increment()
 			}
 		}
@@ -96,18 +77,15 @@ func test(
 	}
 
 	fmt.Println("Testing progress:")
-	pbTest := NewProgressBar(samplesCount, progressBarWidth)
+	pbTest := progress_bar.New(samplesCount, progressBarWidth)
 
 	for digit := range 10 {
 		samples := testData[strconv.Itoa(digit)]
 		for _, sample := range samples {
-			_, k := predictFunc(sample)
-			if strconv.Itoa(digit) == k {
+			k := predictFunc(sample)
+			if digit == k {
 				exactResults++
 			}
-			//if digit == category2Digit[k] {
-			//	exactResults++
-			//}
 			pbTest.Increment()
 		}
 	}

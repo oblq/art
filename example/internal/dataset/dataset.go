@@ -1,4 +1,4 @@
-package main
+package dataset
 
 import (
 	"encoding/csv"
@@ -8,7 +8,7 @@ import (
 	"strconv"
 )
 
-func getData(path string, samplesPerDigit int, shuffle bool) (map[string][][]float64, error) {
+func GetData(path string, samplesPerDigit int, shuffle bool) (map[string][][]float64, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open mnist_test.csv: %v", err)

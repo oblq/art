@@ -17,29 +17,30 @@ type DefaultARTMAP2 struct {
 	// Network structure
 	M             int // M - dimension of input vectors
 	NumCategories int // number of output classes
+	NumOfClasses  int // number of output classes
 
 	// Network weights
-	Weights          [][]float64 // w_j - weight vectors for coding nodes
-	OutputCategories [][]float64
+	w [][]float64 // w_j - weight vectors for coding nodes
+	W []int       // W_j - map categories to output classes labels
 
 	// Category mappings
-	MapField []int // maps coding nodes to output categories
+	//MapField []int // maps coding nodes to output categories
 }
 
 // NewDefaultARTMAP2 creates a new Default ARTMAP 2 network with default parameters
-func NewDefaultARTMAP2(inputDim, numCategories int) *DefaultARTMAP2 {
+func NewDefaultARTMAP2(inputDim, numClasses int) *DefaultARTMAP2 {
 	// Initialize with default parameters as mentioned in the paper
 	network := &DefaultARTMAP2{
-		RhoBar:           0.0,  // Default value for maximal code compression
-		Alpha:            0.01, // Default choice parameter
-		Beta:             1.0,  // Fast learning
-		Epsilon:          -0.001,
-		CAMRulePower:     1.0,
-		M:                inputDim,
-		NumCategories:    numCategories,
-		Weights:          make([][]float64, 0),
-		OutputCategories: make([][]float64, 0),
-		MapField:         []int{},
+		RhoBar:       0.0,  // Default value for maximal code compression
+		Alpha:        0.01, // Default choice parameter
+		Beta:         1.0,  // Fast learning
+		Epsilon:      -0.001,
+		CAMRulePower: 1.0,
+		M:            inputDim,
+		NumOfClasses: numClasses,
+		w:            make([][]float64, 0),
+		W:            make([]int, 0),
+		//MapField:      []int{},
 	}
 	return network
 }
@@ -55,9 +56,9 @@ func (am *DefaultARTMAP2) ComplementCode(input []float64) []float64 {
 	return coded
 }
 
-func (am *DefaultARTMAP2) addNewCategory(newWeights []float64, targetClass int) {
-	am.Weights = append(am.Weights, newWeights)
-	am.MapField = append(am.MapField, targetClass)
+func (am *DefaultARTMAP2) addNewCategory(newWeights []float64, k int) {
+	am.w = append(am.w, newWeights)
+	am.W = append(am.W, k)
 }
 
 type Activation struct {
@@ -68,26 +69,28 @@ type Activation struct {
 	fuzzyIntersectionSum float64
 }
 
+// Activate categories
 // B.7 and B.8:
 // Calculate signals to committed coding nodes
 // Sort the committed coding nodes with
 // T j > αM in descending order.
-func (am *DefaultARTMAP2) signalsToCommittedNodes(A []float64) []Activation {
+func (am *DefaultARTMAP2) choiceFunction(A []float64) []Activation {
 	T := make([]Activation, 0)
 	activationThreshold := am.Alpha * float64(am.M)
 
-	for j := 0; j < len(am.Weights); j++ {
+	for j := 0; j < len(am.w); j++ {
 		fuzzyIntersection := make([]float64, len(A))
 		fuzzyIntersectionSum := 0.0
 		wSum := 0.0
 		for i := 0; i < am.M; i++ {
-			fuzzyIntersection[i] = math.Min(A[i], am.Weights[j][i])
+			fuzzyIntersection[i] = math.Min(A[i], am.w[j][i])
 			fuzzyIntersectionSum += fuzzyIntersection[i]
-			wSum += am.Weights[j][i]
+			wSum += am.w[j][i]
 		}
 
 		activationVal := fuzzyIntersectionSum + (1-am.Alpha)*(float64(am.M)-wSum)
 		if activationVal < activationThreshold {
+			// skip nodes with activation value less than threshold
 			continue
 		}
 
@@ -115,8 +118,8 @@ func (am *DefaultARTMAP2) signalsToCommittedNodes(A []float64) []Activation {
 // B.11. Learning: Update coding weights
 func (am *DefaultARTMAP2) updateWeights(A []float64, t Activation) {
 	for i := 0; i < 2*am.M; i++ {
-		//am.Weights[t.j][i] = am.Beta*math.Min(A[i], am.Weights[t.j][i]) + (1-am.Beta)*am.Weights[t.j][i]
-		am.Weights[t.j][i] = am.Beta*t.fuzzyIntersection[i] + (1-am.Beta)*am.Weights[t.j][i]
+		//am.w[t.j][i] = am.Beta*math.Min(A[i], am.w[t.j][i]) + (1-am.Beta)*am.w[t.j][i]
+		am.w[t.j][i] = am.Beta*t.fuzzyIntersection[i] + (1-am.Beta)*am.w[t.j][i]
 	}
 }
 
@@ -124,7 +127,7 @@ func (am *DefaultARTMAP2) updateWeights(A []float64, t Activation) {
 func (am *DefaultARTMAP2) Fit(a []float64, k int) {
 	A := am.ComplementCode(a)
 
-	if len(am.Weights) == 0 {
+	if len(am.w) == 0 {
 		am.addNewCategory(A, k)
 		return
 	}
@@ -132,7 +135,13 @@ func (am *DefaultARTMAP2) Fit(a []float64, k int) {
 	// Winner-take-all coding during training
 	// Find the best matching existing category or create a new one
 
-	T := am.signalsToCommittedNodes(A)
+	// coding field activation pattern (CAM): (yj)
+	//y := make([]float64, len(am.w))
+
+	T := am.choiceFunction(A)
+
+	// B.5. Set vigilance ρ to its baseline value
+	am.Rho = am.RhoBar
 
 	matched := false
 
@@ -144,28 +153,27 @@ func (am *DefaultARTMAP2) Fit(a []float64, k int) {
 		resonance := t.fuzzyIntersectionSum / float64(am.M)
 		if resonance >= am.Rho {
 			// B.9.b. Output class prediction
-			J := am.MapField[t.j]
+			J := am.W[t.j]
 			if J == k {
 				// B.9.c. Correct prediction
+				matched = true
 
 				// B.11. Learning: Update coding weights
 				am.updateWeights(A, t)
 
 				// Distributed next-a test (specific to Default ARTMAP 2)
 				// Test if the network would correctly classify the a with distributed val
-				prediction := am.Predict(A)
-				if prediction != k {
-					am.Rho = resonance + am.Epsilon
-					continue
-				}
+				//prediction := am.Predict(A)
+				//if prediction != k {
+				//	am.Rho = resonance + am.Epsilon
+				//	continue
+				//}
 
-				matched = true
 				break
 			} else {
 				// B.9.d Match tracking: If the active code J fails to
 				// predict the correct output class (σK = 0), raise vigilance:
 				am.Rho = resonance + am.Epsilon
-				continue
 			}
 		}
 	}
@@ -175,52 +183,51 @@ func (am *DefaultARTMAP2) Fit(a []float64, k int) {
 		// add a committed node and return to Step B.4
 		am.addNewCategory(A, k)
 	}
-
-	// B.5. Set vigilance ρ to its baseline value
-	am.Rho = am.RhoBar
 }
 
 // Predict predicts the class of an input using distributed val
 func (am *DefaultARTMAP2) Predict(a []float64) int {
-	if len(am.Weights) == 0 {
+	if len(am.w) == 0 {
 		return -1
 	}
 
 	A := am.ComplementCode(a)
 
-	T := am.signalsToCommittedNodes(A)
+	T := am.choiceFunction(A)
+
+	return am.W[T[0].j]
 
 	// Calculate distributed activations using increased-gradient CAM rule
-	am.calcDistributedActivation(A, T)
+	//am.calcDistributedActivation(A, T)
 
-	// Count votes for each category
-	categoryVotes := make([]float64, am.NumCategories)
-	for _, t := range T {
-		categoryVotes[am.MapField[t.j]] += t.distributedVal
-	}
-
-	// Find the category with the highest vote
-	maxVote := -1.0
-	predictedClass := -1
-	for k := 0; k < am.NumCategories; k++ {
-		if categoryVotes[k] > maxVote {
-			maxVote = categoryVotes[k]
-			predictedClass = k
-		}
-	}
-
-	return predictedClass
+	//	// Count votes for each category
+	//	categoryVotes := make([]float64, am.NumCategories)
+	//	for _, t := range T {
+	//		categoryVotes[am.W[t.j]] += t.distributedVal
+	//	}
+	//
+	//	// Find the category with the highest vote
+	//	maxVote := -1.0
+	//	predictedClass := -1
+	//	for k := 0; k < am.NumCategories; k++ {
+	//		if categoryVotes[k] > maxVote {
+	//			maxVote = categoryVotes[k]
+	//			predictedClass = k
+	//		}
+	//	}
+	//
+	//	return predictedClass
 }
 
-func (am *DefaultARTMAP2) calcDistributedActivation(A []float64, T []Activation) {
-	// increased-gradient CAM rule
-
-	// Normalize activations
-	totalActivation := 0.0
-	for _, t := range T {
-		totalActivation += t.val
-	}
-	for _, t := range T {
-		t.distributedVal = t.val / totalActivation
-	}
-}
+//func (am *DefaultARTMAP2) calcDistributedActivation(A []float64, T []Activation) {
+//	// increased-gradient CAM rule
+//
+//	// Normalize activations
+//	totalActivation := 0.0
+//	for _, t := range T {
+//		totalActivation += t.val
+//	}
+//	for _, t := range T {
+//		t.distributedVal = t.val / totalActivation
+//	}
+//}

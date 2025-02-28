@@ -1,4 +1,4 @@
-package main
+package progress_bar
 
 import (
 	"fmt"
@@ -16,7 +16,7 @@ type ProgressBar struct {
 	startTime  time.Time
 }
 
-func NewProgressBar(total, width int) *ProgressBar {
+func New(total, width int) *ProgressBar {
 	return &ProgressBar{
 		total:     total,
 		width:     width,
