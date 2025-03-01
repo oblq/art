@@ -100,6 +100,7 @@ func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*Fuzzy
 // to prevent the "category proliferation problem."
 // Complement coding achieve normalization while preserving amplitude information.
 // Inputs preprocessed in complement coding are automatically normalized.
+// This is the F1 layer.
 func (m *FuzzyART) complementCode(a []float64) []float64 {
 	// Create a new slice with double the length of the input slice
 	A := make([]float64, len(a)*2)
