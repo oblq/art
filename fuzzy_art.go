@@ -44,8 +44,12 @@ type FuzzyART struct {
 	// Decrease beta for more stable learning, which can be beneficial for more stable environments.
 	beta float64
 
-	// Weight matrix - stores category prototypes
-	W [][]float64
+	// Flat array storage for all weights
+	weights []float64
+	// Number of categories
+	numCategories int
+	// Length of each weight vector
+	weightVectorLength int
 }
 
 func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*FuzzyART, error) {
@@ -59,6 +63,9 @@ func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*Fuzzy
 		return nil, fmt.Errorf("learning rate (beta) must be between 0 and 1, got %f", beta)
 	}
 
+	// Calculate the length of complement-coded vectors
+	weightVectorLength := inputLen * 2
+
 	return &FuzzyART{
 		workerPool: make(chan struct{}, runtime.NumCPU()),
 		batchSize:  16,
@@ -66,68 +73,57 @@ func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*Fuzzy
 		tPool: &sync.Pool{
 			New: func() interface{} {
 				return &activation{
-					fuzzyIntersection: make([]float64, inputLen*2),
+					fuzzyIntersection: make([]float64, weightVectorLength),
 				}
 			},
 		},
-		rho:   rho,
-		alpha: alpha,
-		beta:  beta,
-		W:     make([][]float64, 0),
+		rho:                rho,
+		alpha:              alpha,
+		beta:               beta,
+		weights:            make([]float64, 0),
+		numCategories:      0,
+		weightVectorLength: weightVectorLength,
 	}, nil
 }
 
+// getWeightVector returns a slice view of the weights for category j
+func (m *FuzzyART) getWeightVector(j int) []float64 {
+	start := j * m.weightVectorLength
+	end := start + m.weightVectorLength
+	return m.weights[start:end]
+}
+
+// addCategory adds a new category with the given weights and returns its index
+func (m *FuzzyART) addCategory(weights []float64) int {
+	m.weights = append(m.weights, weights...)
+	m.numCategories++
+	return m.numCategories - 1
+}
+
+// updateWeightVector updates the weights for category j
+func (m *FuzzyART) updateWeightVector(j int, newWeights []float64) {
+	start := j * m.weightVectorLength
+	copy(m.weights[start:start+m.weightVectorLength], newWeights)
+}
+
 // complementCode creates complement-coded representation of input vector.
-// Complement coding is a common preprocessing step in ART models
-// to prevent the "category proliferation problem."
-// Complement coding achieve normalization while preserving amplitude information.
-// Inputs preprocessed in complement coding are automatically normalized.
 func (m *FuzzyART) complementCode(a []float64) []float64 {
 	// Create a new slice with double the length of the input slice
-	A := make([]float64, len(a)*2)
+	A := make([]float64, m.weightVectorLength)
 	for i, v := range a {
 		// Copy the original value to the first half of the new slice
 		A[i] = v
 		// Calculate and store the complement (1 - X[i]) in the second half of the new slice
 		A[i+len(a)] = 1 - v
 	}
-
 	return A
 }
 
-// min takes two slices of float64 values and returns a new slice
-// containing the element-wise min of the two input slices.
-// The function is used to calculate the fuzzy intersection between two vectors.
-// The fuzzy intersection slice is passed by reference to avoid unnecessary memory allocations.
-//func (m *FuzzyART) min(A, W, fuzzyIntersection []float64) {
-//	for i := range A {
-//		if A[i] < W[i] {
-//			fuzzyIntersection[i] = A[i]
-//		} else {
-//			fuzzyIntersection[i] = W[i]
-//		}
-//	}
-//}
-
-// sum all the elements in a float64 slice.
-// The function is used to calculate the
-// equivalent of the L1 norm of a vector.
-//func (m *FuzzyART) sum(arr []float64) (norm float64) {
-//	for _, v := range arr {
-//		norm += v
-//	}
-//
-//	return
-//}
-
 // choice compute the choice function.
-// Calculates the activation of a category based on the input vector.
-// The fuzzyIntersection slice s passed by reference to avoid unnecessary memory allocations.
 func (m *FuzzyART) choice(A, W []float64, activation *activation) {
 	activation.aNorm = 0
 	activation.wNorm = 0
 	activation.fuzzyIntersectionNorm = 0
-
 	for i := range A {
 		activation.aNorm += A[i]
 		activation.wNorm += W[i]
@@ -136,10 +132,8 @@ func (m *FuzzyART) choice(A, W []float64, activation *activation) {
 		} else {
 			activation.fuzzyIntersection[i] = W[i]
 		}
-		//activation.fuzzyIntersection[i] = math.Min(A[i], W[i])
 		activation.fuzzyIntersectionNorm += activation.fuzzyIntersection[i]
 	}
-
 	activation.t = activation.fuzzyIntersectionNorm / (m.alpha + activation.wNorm)
 }
 
@@ -149,26 +143,26 @@ type activation struct {
 	aNorm                 float64
 	wNorm                 float64
 	fuzzyIntersectionNorm float64
-
 	// 8-byte aligned field
 	fuzzyIntersection []float64
-
 	// 4-byte field
 	j int
-
 	// 4-byte padding to ensure 8-byte alignment
 	_ [4]byte
 }
 
 // categoryChoices implements the recognition field functionality
-// by computing activation values for each category based on the input vector.
-// The sorting process also implicitly handles lateral inhibition by prioritizing
-// the category with the highest activation, thereby inhibiting others.
 func (m *FuzzyART) categoryChoices(A []float64) (T []*activation) {
-	T = make([]*activation, len(m.W))
+	T = make([]*activation, m.numCategories)
+
+	// If no categories exist yet, return empty slice
+	if m.numCategories == 0 {
+		return T
+	}
 
 	activationsCh := make(chan []*activation, len(m.workerPool)*m.batchSize)
 	defer close(activationsCh)
+
 	go func() {
 		for activations := range activationsCh {
 			for _, a := range activations {
@@ -178,10 +172,10 @@ func (m *FuzzyART) categoryChoices(A []float64) (T []*activation) {
 		}
 	}()
 
-	for jStart := 0; jStart < len(m.W); jStart += m.batchSize {
+	for jStart := 0; jStart < m.numCategories; jStart += m.batchSize {
 		jEnd := jStart + m.batchSize
-		if jEnd > len(m.W) {
-			jEnd = len(m.W)
+		if jEnd > m.numCategories {
+			jEnd = m.numCategories
 		}
 
 		m.wg.Add(1)
@@ -189,22 +183,25 @@ func (m *FuzzyART) categoryChoices(A []float64) (T []*activation) {
 		m.workerPool <- struct{}{}
 
 		// spawn a goroutine to process a batch of categories
-		go func(A []float64, categories [][]float64, startIndex int) {
+		go func(A []float64, startIndex, endIndex int) {
 			defer func() {
 				// release the worker
 				<-m.workerPool
 			}()
 
-			activations := make([]*activation, len(categories))
-			for j, W := range categories {
+			activations := make([]*activation, endIndex-startIndex)
+			for j := startIndex; j < endIndex; j++ {
 				u := m.tPool.Get().(*activation)
-				u.j = startIndex + j
-				m.choice(A, W, u)
+				u.j = j
 
-				activations[j] = u
+				// Get weight vector for this category
+				W := m.getWeightVector(j)
+
+				m.choice(A, W, u)
+				activations[j-startIndex] = u
 			}
 			activationsCh <- activations
-		}(A, m.W[jStart:jEnd], jStart)
+		}(A, jStart, jEnd)
 	}
 
 	m.wg.Wait()
@@ -223,8 +220,6 @@ func (m *FuzzyART) categoryChoices(A []float64) (T []*activation) {
 }
 
 // match computes the match function.
-// The match function calculates the resonance between the input vector and a category.
-// The resonance is the ratio of the fuzzy intersection L1 norm to the input vector L1 norm.
 func (m *FuzzyART) match(fiNorm, iNorm float64) float64 {
 	if fiNorm == 0 && iNorm == 0 {
 		return 1
@@ -234,39 +229,43 @@ func (m *FuzzyART) match(fiNorm, iNorm float64) float64 {
 }
 
 // resonateOrReset implements the resonance or reset logic.
-// If the best matching category passes the vigilance test (>= rho),
-// its weights are updated to move closer to the input vector, facilitating learning.
-// If it fails, the category is inhibited (temporarily ignored), and the next best category is tested,
-// continuing until a suitable category is found or all are exhausted
-// in which case a new category is created.
 func (m *FuzzyART) resonateOrReset(
 	A []float64,
 	T []*activation,
-) (categoryWeights []float64, categoryIndex int) {
+) ([]float64, int) {
+	// Create a buffer for the new weights
+	newWeights := make([]float64, m.weightVectorLength)
+
 	for _, t := range T {
 		resonance := m.match(t.fuzzyIntersectionNorm, t.aNorm)
 		if resonance >= m.rho {
-			newW := make([]float64, len(A))
-			for k := range newW {
-				newW[k] = m.beta*t.fuzzyIntersection[k] + (1-m.beta)*m.W[t.j][k]
+			// Get the current weights for this category
+			W := m.getWeightVector(t.j)
+
+			// Calculate new weights
+			for k := range newWeights {
+				newWeights[k] = m.beta*t.fuzzyIntersection[k] + (1-m.beta)*W[k]
 			}
 
-			m.W[t.j] = newW
-			return newW, t.j
+			// Update the weights for this category
+			m.updateWeightVector(t.j, newWeights)
+
+			// Return a view of the updated weights
+			return m.getWeightVector(t.j), t.j
 		}
 	}
 
 	// If no category meets the vigilance criterion, create a new category.
-	// Fast commitment option, directly copy the input vector as the new category.
-	m.W = append(m.W, A)
-
-	return m.W[len(m.W)-1], len(m.W) - 1
+	categoryIndex := m.addCategory(A)
+	return m.getWeightVector(categoryIndex), categoryIndex
 }
 
 // recover returns the activation instances to the pool for reuse.
 func (m *FuzzyART) recover(T []*activation) {
 	for _, t := range T {
-		m.tPool.Put(t)
+		if t != nil {
+			m.tPool.Put(t)
+		}
 	}
 }
 
@@ -275,18 +274,34 @@ func (m *FuzzyART) Train(a []float64) ([]float64, int) {
 	A := m.complementCode(a)
 	T := m.categoryChoices(A)
 	defer m.recover(T)
+
+	// If no categories exist yet, create the first one
+	if m.numCategories == 0 {
+		categoryIndex := m.addCategory(A)
+		return m.getWeightVector(categoryIndex), categoryIndex
+	}
+
 	return m.resonateOrReset(A, T)
 }
 
 // Infer implements the recognition process with optional learning.
-// It returns the weight vector of the best matching category and its index.
-// If learn is true, it updates the weights of the matching category.
 func (m *FuzzyART) Infer(a []float64, learn bool) ([]float64, int) {
 	A := m.complementCode(a)
 	T := m.categoryChoices(A)
 	defer m.recover(T)
+
+	// If no categories exist yet, create the first one if learning is enabled
+	if m.numCategories == 0 {
+		if learn {
+			categoryIndex := m.addCategory(A)
+			return m.getWeightVector(categoryIndex), categoryIndex
+		}
+		// Return empty result if no categories and not learning
+		return make([]float64, m.weightVectorLength), -1
+	}
+
 	if !learn {
-		return m.W[T[0].j], T[0].j
+		return m.getWeightVector(T[0].j), T[0].j
 	}
 
 	return m.resonateOrReset(A, T)
