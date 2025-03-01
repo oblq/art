@@ -7,88 +7,28 @@ import (
 	"sync"
 )
 
-type Batch struct {
-	A          []float64
-	categories [][]float64
-	startIndex int
-}
+type activation struct {
+	// 8-byte aligned fields
+	t                     float64
+	aNorm                 float64
+	wNorm                 float64
+	fuzzyIntersectionNorm float64
 
-type Worker struct {
-	tPool *sync.Pool
-	wg    *sync.WaitGroup
-	alpha float64
-	//resultsChan chan<- []*activation
-	results []*activation
-}
+	// 8-byte aligned field
+	// element-wise min (fuzzy intersection) of the two input slices
+	fuzzyIntersection []float64
 
-func NewWorker(features int, alpha float64, wg *sync.WaitGroup) *Worker { //, resultsChan chan<- []*activation) *Worker {
-	return &Worker{
-		tPool: &sync.Pool{
-			New: func() interface{} {
-				return &activation{
-					fuzzyIntersection: make([]float64, features),
-				}
-			},
-		},
-		wg:      wg,
-		alpha:   alpha,
-		results: make([]*activation, 0),
-	}
-}
+	// 4-byte field
+	j int
 
-func (w *Worker) processBatch(
-	batch Batch,
-) {
-	//results := make([]*activation, len(batch.categories))
-	for j, W := range batch.categories {
-		t := w.tPool.Get().(*activation)
-		//t := &activation{
-		//	fuzzyIntersection: make([]float64, len(W)),
-		//}
-		t.j = batch.startIndex + j
-		w.choice(batch.A, W, t)
-		w.results = append(w.results, t)
-	}
-	w.wg.Done()
-	//w.results <- results
-}
-
-// choice compute the choice function.
-// Calculates the activation of a category based on the input vector.
-// The fuzzyIntersection slice s passed by reference to avoid unnecessary memory allocations.
-func (w *Worker) choice(A, W []float64, activation *activation) {
-	activation.aNorm = 0
-	activation.wNorm = 0
-	activation.fuzzyIntersectionNorm = 0
-
-	for i := range A {
-		activation.aNorm += A[i]
-		activation.wNorm += W[i]
-		if A[i] < W[i] {
-			activation.fuzzyIntersection[i] = A[i]
-		} else {
-			activation.fuzzyIntersection[i] = W[i]
-		}
-		//activation.fuzzyIntersection[i] = math.Min(A[i], W[i])
-		activation.fuzzyIntersectionNorm += activation.fuzzyIntersection[i]
-	}
-
-	activation.t = activation.fuzzyIntersectionNorm / (w.alpha + activation.wNorm)
-}
-
-func (w *Worker) recover() {
-	for _, t := range w.results {
-		w.tPool.Put(t)
-	}
-	w.results = make([]*activation, 0)
+	// 4-byte padding to ensure 8-byte alignment
+	_ [4]byte
 }
 
 type FuzzyART struct {
-	//workerPool chan Task
-	workerPool []*Worker
+	workerPool chan struct{}
 	batchSize  int
-	batchChan  chan Batch
-	wg         *sync.WaitGroup
+	wg         sync.WaitGroup
 	tPool      *sync.Pool
 
 	// Vigilance parameter - controls category granularity
@@ -137,12 +77,10 @@ func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*Fuzzy
 		return nil, fmt.Errorf("learning rate (beta) must be between 0 and 1, got %f", beta)
 	}
 
-	fuzzyART := &FuzzyART{
-		//workerPool: make(chan struct{}, runtime.NumCPU()),
-		workerPool: make([]*Worker, runtime.NumCPU()),
+	return &FuzzyART{
+		workerPool: make(chan struct{}, runtime.NumCPU()),
 		batchSize:  16,
-		batchChan:  make(chan Batch, runtime.NumCPU()),
-		wg:         &sync.WaitGroup{},
+		wg:         sync.WaitGroup{},
 		tPool: &sync.Pool{
 			New: func() interface{} {
 				return &activation{
@@ -154,30 +92,7 @@ func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*Fuzzy
 		alpha: alpha,
 		beta:  beta,
 		W:     make([][]float64, 0),
-	}
-
-	// Create workers, one per CPU
-	for i := 0; i < runtime.NumCPU(); i++ {
-		fuzzyART.workerPool[i] = NewWorker(inputLen*2, alpha, fuzzyART.wg)
-	}
-
-	// Start the worker goroutines
-	fuzzyART.startWorkers()
-
-	return fuzzyART, nil
-}
-
-// startWorkers spawns worker goroutines, one per CPU
-func (m *FuzzyART) startWorkers() {
-	for i := range m.workerPool {
-		//m.wg.Add(1)
-		go func(workerIndex int) {
-			//defer m.wg.Done()
-			for batch := range m.batchChan {
-				m.workerPool[workerIndex].processBatch(batch)
-			}
-		}(i)
-	}
+	}, nil
 }
 
 // complementCode creates complement-coded representation of input vector.
@@ -221,31 +136,23 @@ func (m *FuzzyART) choice(A, W []float64, activation *activation) {
 	activation.t = activation.fuzzyIntersectionNorm / (m.alpha + activation.wNorm)
 }
 
-type activation struct {
-	// 8-byte aligned fields
-	t                     float64
-	aNorm                 float64
-	wNorm                 float64
-	fuzzyIntersectionNorm float64
-
-	// 8-byte aligned field
-	fuzzyIntersection []float64
-
-	// 4-byte field
-	j int
-
-	// 4-byte padding to ensure 8-byte alignment
-	_ [4]byte
-}
-
 // categoryChoices implements the recognition field functionality
 // by computing activation values for each category based on the input vector.
 // The sorting process also implicitly handles lateral inhibition by prioritizing
 // the category with the highest activation, thereby inhibiting others.
-func (m *FuzzyART) categoryChoices(A []float64) []*activation {
-	T := make([]*activation, len(m.W))
+func (m *FuzzyART) categoryChoices(A []float64) (T []*activation) {
+	T = make([]*activation, len(m.W))
 
-	//mutex := &sync.Mutex{}
+	activationsCh := make(chan []*activation, len(m.workerPool)*m.batchSize)
+	defer close(activationsCh)
+	go func() {
+		for activations := range activationsCh {
+			for _, a := range activations {
+				T[a.j] = a
+			}
+			m.wg.Done()
+		}
+	}()
 
 	for jStart := 0; jStart < len(m.W); jStart += m.batchSize {
 		jEnd := jStart + m.batchSize
@@ -254,41 +161,29 @@ func (m *FuzzyART) categoryChoices(A []float64) []*activation {
 		}
 
 		m.wg.Add(1)
-		m.batchChan <- Batch{
-			A:          A,
-			categories: m.W[jStart:jEnd],
-			startIndex: jStart,
-		}
+		// acquire a worker
+		m.workerPool <- struct{}{}
 
-		//// acquire a worker
-		//m.workerPool <- struct{}{}
-		//
-		//// spawn a goroutine to process a batch of categories
-		//go func(A []float64, categories [][]float64, startIndex int) {
-		//	defer func() {
-		//		// release the worker
-		//		<-m.workerPool
-		//		m.wg.Done()
-		//	}()
-		//
-		//	for j, W := range categories {
-		//		u := m.tPool.Get().(*activation)
-		//		u.j = startIndex + j
-		//		m.choice(A, W, u)
-		//		mutex.Lock()
-		//		T[u.j] = u
-		//		mutex.Unlock()
-		//	}
-		//}(A, m.W[jStart:jEnd], jStart)
+		// spawn a goroutine to process a batch of categories
+		go func(A []float64, categories [][]float64, startIndex int) {
+			defer func() {
+				// release the worker
+				<-m.workerPool
+			}()
+
+			activations := make([]*activation, len(categories))
+			for j, W := range categories {
+				u := m.tPool.Get().(*activation)
+				u.j = startIndex + j
+				m.choice(A, W, u)
+
+				activations[j] = u
+			}
+			activationsCh <- activations
+		}(A, m.W[jStart:jEnd], jStart)
 	}
 
 	m.wg.Wait()
-
-	for _, worker := range m.workerPool {
-		for _, t := range worker.results {
-			T[t.j] = t
-		}
-	}
 
 	// Sort category indices by activation values in descending order
 	sort.SliceStable(T, func(a, b int) bool {
@@ -300,7 +195,7 @@ func (m *FuzzyART) categoryChoices(A []float64) []*activation {
 		return T[a].t > T[b].t
 	})
 
-	return T
+	return
 }
 
 // match computes the match function.
@@ -346,26 +241,23 @@ func (m *FuzzyART) resonateOrReset(
 
 // recover returns the activation instances to the pool for reuse.
 func (m *FuzzyART) recover(T []*activation) {
-	for _, worker := range m.workerPool {
-		worker.recover()
+	for _, t := range T {
+		m.tPool.Put(t)
 	}
-	//for _, t := range T {
-	//	m.tPool.Put(t)
-	//}
 }
 
-// Train implements the complete ART learning cycle.
-func (m *FuzzyART) Train(a []float64) ([]float64, int) {
+// Fit implements the complete ART learning cycle.
+func (m *FuzzyART) Fit(a []float64) ([]float64, int) {
 	A := m.complementCode(a)
 	T := m.categoryChoices(A)
 	defer m.recover(T)
 	return m.resonateOrReset(A, T)
 }
 
-// Infer implements the recognition process with optional learning.
+// Predict implements the recognition process with optional learning.
 // It returns the weight vector of the best matching category and its index.
 // If learn is true, it updates the weights of the matching category.
-func (m *FuzzyART) Infer(a []float64, learn bool) ([]float64, int) {
+func (m *FuzzyART) Predict(a []float64, learn bool) ([]float64, int) {
 	A := m.complementCode(a)
 	T := m.categoryChoices(A)
 	defer m.recover(T)
@@ -377,6 +269,5 @@ func (m *FuzzyART) Infer(a []float64, learn bool) ([]float64, int) {
 }
 
 func (m *FuzzyART) Close() {
-	close(m.batchChan)
-	//close(m.workerPool)
+	close(m.workerPool)
 }
