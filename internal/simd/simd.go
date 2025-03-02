@@ -16,7 +16,6 @@ var defaultProvider = getBestAvailableProvider()
 // getBestAvailableProvider returns the best SIMD provider for the current platform
 // or nil if no specific provider is available
 func getBestAvailableProvider() Provider {
-	return new(genericProvider)
 	provider := GetProvider()
 	if provider == nil {
 		provider = new(genericProvider)
