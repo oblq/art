@@ -1,4 +1,4 @@
-package avx512
+package simd
 
 /*
 #cgo CFLAGS: -mavx512f -mavx512vl -mavx512bw -mavx512vnni -mavx512dq
