@@ -21,12 +21,12 @@ const (
 )
 
 func main() {
-	trainData, err := dataset.GetData("./mnist/mnist_train.csv", TRAIN_SAMPLES_PER_DIGIT, false)
+	trainData, err := dataset.GetData("../mnist/mnist_train.csv", TRAIN_SAMPLES_PER_DIGIT, false)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	testData, err := dataset.GetData("./mnist/mnist_test.csv", TEST_SAMPLES_PER_DIGIT, false)
+	testData, err := dataset.GetData("../mnist/mnist_test.csv", TEST_SAMPLES_PER_DIGIT, false)
 	if err != nil {
 		log.Fatal(err)
 	}
