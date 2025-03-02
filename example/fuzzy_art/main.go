@@ -25,7 +25,7 @@ func main() {
 	//	log.Fatal(http.ListenAndServe("0.0.0.0:5555", nil))
 	//}()
 
-	trainData, err := dataset.GetData("./mnist/mnist_train.csv", TRAIN_SAMPLES_PER_DIGIT, true)
+	trainData, err := dataset.GetData("./mnist/mnist_train.csv", TRAIN_SAMPLES_PER_DIGIT, false)
 	if err != nil {
 		log.Fatal(err)
 	}

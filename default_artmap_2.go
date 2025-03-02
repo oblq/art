@@ -1,8 +1,9 @@
 package art
 
 import (
-	"math"
 	"sort"
+
+	"art/internal/simd"
 )
 
 type DefaultARTMAP2 struct {
@@ -31,7 +32,7 @@ type DefaultARTMAP2 struct {
 func NewDefaultARTMAP2(inputDim, numClasses int) *DefaultARTMAP2 {
 	// Initialize with default parameters as mentioned in the paper
 	network := &DefaultARTMAP2{
-		RhoBar:       0.0,  // Default value for maximal code compression
+		RhoBar:       0.9,  // Default value for maximal code compression
 		Alpha:        0.01, // Default choice parameter
 		Beta:         1.0,  // Fast learning
 		Epsilon:      -0.001,
@@ -72,23 +73,23 @@ type Activation struct {
 // Activate categories
 // B.7 and B.8:
 // Calculate signals to committed coding nodes
-// Sort the committed coding nodes with
+// Sort the committed coding nodes with'0]
 // T j > αM in descending order.
 func (am *DefaultARTMAP2) choiceFunction(A []float64) []Activation {
 	T := make([]Activation, 0)
 	activationThreshold := am.Alpha * float64(am.M)
 
+	fuzzyIntersection := make([]float64, len(A))
+
 	for j := 0; j < len(am.w); j++ {
-		fuzzyIntersection := make([]float64, len(A))
-		fuzzyIntersectionSum := 0.0
-		wSum := 0.0
-		for i := 0; i < am.M; i++ {
-			fuzzyIntersection[i] = math.Min(A[i], am.w[j][i])
-			fuzzyIntersectionSum += fuzzyIntersection[i]
-			wSum += am.w[j][i]
-		}
+		// Use cross-platform optimized SIMD function
+		fuzzyIntersectionSum := simd.FuzzyIntersectionSum(A, am.w[j], fuzzyIntersection)
+
+		// Use cross-platform optimized SIMD function
+		wSum := simd.SumFloat64(am.w[j])
 
 		activationVal := fuzzyIntersectionSum + (1-am.Alpha)*(float64(am.M)-wSum)
+
 		if activationVal < activationThreshold {
 			// skip nodes with activation value less than threshold
 			continue
@@ -100,6 +101,9 @@ func (am *DefaultARTMAP2) choiceFunction(A []float64) []Activation {
 			fuzzyIntersection:    fuzzyIntersection,
 			fuzzyIntersectionSum: fuzzyIntersectionSum,
 		})
+
+		// new slice for the next iteration
+		fuzzyIntersection = make([]float64, len(A))
 	}
 
 	// Sort category val values indices by val values in descending order

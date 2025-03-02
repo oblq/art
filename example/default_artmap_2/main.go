@@ -14,14 +14,14 @@ import (
 )
 
 const (
-	TRAIN_SAMPLES_PER_DIGIT = 400
-	TEST_SAMPLES_PER_DIGIT  = 40
+	TRAIN_SAMPLES_PER_DIGIT = 1000
+	TEST_SAMPLES_PER_DIGIT  = 100
 
 	progressBarWidth = 60
 )
 
 func main() {
-	trainData, err := dataset.GetData("./mnist/mnist_train.csv", TRAIN_SAMPLES_PER_DIGIT, true)
+	trainData, err := dataset.GetData("./mnist/mnist_train.csv", TRAIN_SAMPLES_PER_DIGIT, false)
 	if err != nil {
 		log.Fatal(err)
 	}
