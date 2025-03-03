@@ -9,9 +9,6 @@ import (
 func hasAVX512() bool {
 	return cpu.X86.HasAVX512 &&
 		cpu.X86.HasAVX512F &&
-		cpu.X86.HasAVX512VL &&
-		cpu.X86.HasAVX512BW &&
-		cpu.X86.HasAVX512VNNI &&
 		cpu.X86.HasAVX512DQ
 }
 

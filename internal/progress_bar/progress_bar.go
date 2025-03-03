@@ -14,21 +14,59 @@ type ProgressBar struct {
 	emptyChar  string
 	percentage int
 	startTime  time.Time
+	ticker     *time.Ticker
+	stopChan   chan struct{}
 }
 
 func New(total, width int) *ProgressBar {
-	return &ProgressBar{
+	pb := &ProgressBar{
 		total:     total,
 		width:     width,
 		fillChar:  "█",
 		emptyChar: "░",
 		startTime: time.Now(),
+		stopChan:  make(chan struct{}),
 	}
+
+	// Start the auto-refresh automatically
+	pb.startTicker()
+
+	return pb
+}
+
+func (pb *ProgressBar) startTicker() {
+	pb.ticker = time.NewTicker(1 * time.Second)
+
+	go func() {
+		// Print immediately on start
+		pb.Print()
+
+		for {
+			select {
+			case <-pb.ticker.C:
+				pb.Print()
+			case <-pb.stopChan:
+				pb.ticker.Stop()
+				return
+			}
+		}
+	}()
+}
+
+func (pb *ProgressBar) stopTicker() {
+	pb.stopChan <- struct{}{}
 }
 
 func (pb *ProgressBar) Increment() {
 	pb.current++
 
+	// If we've reached the total, print the final state and stop the ticker
+	if pb.current >= pb.total {
+		pb.current = pb.total // Ensure we don't exceed total
+		pb.Print()            // Print final state immediately
+		fmt.Println()         // Add newline to finalize output
+		pb.stopTicker()       // Stop the ticker
+	}
 }
 
 func (pb *ProgressBar) Render() string {
@@ -53,4 +91,12 @@ func (pb *ProgressBar) Render() string {
 
 func (pb *ProgressBar) Print() {
 	fmt.Print(pb.Render())
+}
+
+// ForceComplete forces the progress bar to complete, regardless of current count
+func (pb *ProgressBar) ForceComplete() {
+	pb.current = pb.total
+	pb.Print()
+	fmt.Println()
+	pb.stopTicker()
 }

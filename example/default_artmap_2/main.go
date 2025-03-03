@@ -60,9 +60,6 @@ func test(
 			for i := range digitData {
 				fitFunc(digitData[i], d)
 				pb.Increment()
-				if i%100 == 0 {
-					pb.Print()
-				}
 			}
 		}
 	}
@@ -84,15 +81,12 @@ func test(
 
 	for digit := range 10 {
 		samples := testData[strconv.Itoa(digit)]
-		for i, sample := range samples {
+		for _, sample := range samples {
 			k := predictFunc(sample)
 			if digit == k {
 				exactResults++
 			}
 			pbTest.Increment()
-			if i%100 == 0 {
-				pb.Print()
-			}
 		}
 	}
 

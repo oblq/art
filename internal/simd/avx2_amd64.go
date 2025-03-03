@@ -14,36 +14,50 @@ package simd
 double avx2_fuzzy_intersection_float64(const size_t n, double *A, double *w, double *intersection_out)
 {
     static const size_t single_size = 4; // 4 doubles per AVX2 register
-    const size_t end = n / single_size;
+    static const size_t chunk_size = 8;  // Process 2 chunks (8 doubles) per iteration
+    const size_t chunks = n / chunk_size;
+    const size_t remainder_start = chunks * chunk_size;
 
-    __m256d sum_vec = _mm256_setzero_pd();
+    __m256d sum_vec0 = _mm256_setzero_pd();
+    __m256d sum_vec1 = _mm256_setzero_pd();
 
-    // Process 4 doubles at a time
-    for(size_t i = 0; i < end; ++i) {
-        __m256d a_vec = _mm256_loadu_pd(A + i * single_size);
-        __m256d w_vec = _mm256_loadu_pd(w + i * single_size);
+    // Process 8 doubles at a time (2 chunks)
+    for(size_t i = 0; i < chunks; ++i) {
+        size_t offset = i * chunk_size;
 
-        // Compute min(A[i], w[j][i])
-        __m256d min_vec = _mm256_min_pd(a_vec, w_vec);
+        // First chunk
+        __m256d a_vec0 = _mm256_loadu_pd(A + offset);
+        __m256d w_vec0 = _mm256_loadu_pd(w + offset);
+        __m256d min_vec0 = _mm256_min_pd(a_vec0, w_vec0);
 
-        // Store result in the output array
+        // Second chunk
+        __m256d a_vec1 = _mm256_loadu_pd(A + offset + single_size);
+        __m256d w_vec1 = _mm256_loadu_pd(w + offset + single_size);
+        __m256d min_vec1 = _mm256_min_pd(a_vec1, w_vec1);
+
+        // Store results in the output array if needed
         if (intersection_out != NULL) {
-            _mm256_storeu_pd(intersection_out + i * single_size, min_vec);
+            _mm256_storeu_pd(intersection_out + offset, min_vec0);
+            _mm256_storeu_pd(intersection_out + offset + single_size, min_vec1);
         }
 
-        // Accumulate sum
-        sum_vec = _mm256_add_pd(sum_vec, min_vec);
+        // Accumulate sums
+        sum_vec0 = _mm256_add_pd(sum_vec0, min_vec0);
+        sum_vec1 = _mm256_add_pd(sum_vec1, min_vec1);
     }
+
+    // Combine the two sum vectors
+    __m256d total_sum_vec = _mm256_add_pd(sum_vec0, sum_vec1);
 
     // Reduce sum vector to a single value
     double sum = 0.0;
-    double *sum_arr = (double*)&sum_vec;
+    double *sum_arr = (double*)&total_sum_vec;
     for (int i = 0; i < 4; i++) {
         sum += sum_arr[i];
     }
 
     // Handle remaining elements
-    for(size_t i = end * single_size; i < n; ++i) {
+    for(size_t i = remainder_start; i < n; ++i) {
         double min_val = A[i] < w[i] ? A[i] : w[i];
         if (intersection_out != NULL) {
             intersection_out[i] = min_val;
@@ -58,25 +72,38 @@ double avx2_fuzzy_intersection_float64(const size_t n, double *A, double *w, dou
 double avx2_sum_float64(const size_t n, double *arr)
 {
     static const size_t single_size = 4; // 4 doubles per AVX2 register
-    const size_t end = n / single_size;
+    static const size_t chunk_size = 8;  // Process 2 chunks (8 doubles) per iteration
+    const size_t chunks = n / chunk_size;
+    const size_t remainder_start = chunks * chunk_size;
 
-    __m256d sum_vec = _mm256_setzero_pd();
+    __m256d sum_vec0 = _mm256_setzero_pd();
+    __m256d sum_vec1 = _mm256_setzero_pd();
 
-    // Process 4 doubles at a time
-    for(size_t i = 0; i < end; ++i) {
-        __m256d arr_vec = _mm256_loadu_pd(arr + i * single_size);
-        sum_vec = _mm256_add_pd(sum_vec, arr_vec);
+    // Process 8 doubles at a time (2 chunks)
+    for(size_t i = 0; i < chunks; ++i) {
+        size_t offset = i * chunk_size;
+
+        // Load and add first chunk
+        __m256d arr_vec0 = _mm256_loadu_pd(arr + offset);
+        sum_vec0 = _mm256_add_pd(sum_vec0, arr_vec0);
+
+        // Load and add second chunk
+        __m256d arr_vec1 = _mm256_loadu_pd(arr + offset + single_size);
+        sum_vec1 = _mm256_add_pd(sum_vec1, arr_vec1);
     }
+
+    // Combine the two sum vectors
+    __m256d total_sum_vec = _mm256_add_pd(sum_vec0, sum_vec1);
 
     // Reduce sum vector to a single value
     double sum = 0.0;
-    double *sum_arr = (double*)&sum_vec;
+    double *sum_arr = (double*)&total_sum_vec;
     for (int i = 0; i < 4; i++) {
         sum += sum_arr[i];
     }
 
     // Handle remaining elements
-    for(size_t i = end * single_size; i < n; ++i) {
+    for(size_t i = remainder_start; i < n; ++i) {
         sum += arr[i];
     }
 
