@@ -8,33 +8,12 @@ package simd
 #include <Accelerate/Accelerate.h>
 
 double accelerate_fuzzy_intersection_float64(const size_t n, double *A, double *w, double *intersection_out) {
-    // Create a temporary buffer if intersection_out is NULL
-    double *min_buffer;
-    double *temp_buffer = NULL;
-
-    if (intersection_out != NULL) {
-        min_buffer = intersection_out;
-    } else {
-        // Allocate temporary buffer
-        temp_buffer = (double*)malloc(n * sizeof(double));
-        if (!temp_buffer) return 0.0; // Handle allocation failure
-        min_buffer = temp_buffer;
-    }
-
-    // Copy A to min_buffer
-    memcpy(min_buffer, A, n * sizeof(double));
-
     // Compute min(A[i], w[i])
-    vDSP_vminD(min_buffer, 1, w, 1, min_buffer, 1, n);
+    vDSP_vminD(A, 1, w, 1, intersection_out, 1, n);
 
     // Sum the min values
     double sum = 0.0;
-    vDSP_sveD(min_buffer, 1, &sum, n);
-
-    // Free temporary buffer if allocated
-    if (temp_buffer) {
-        free(temp_buffer);
-    }
+    vDSP_sveD(intersection_out, 1, &sum, n);
 
     return sum;
 }
@@ -42,6 +21,7 @@ double accelerate_fuzzy_intersection_float64(const size_t n, double *A, double *
 double accelerate_sum_float64(const size_t n, double *arr) {
     double sum = 0.0;
     vDSP_sveD(arr, 1, &sum, n);
+
     return sum;
 }
 */
