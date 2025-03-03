@@ -63,7 +63,7 @@ func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*Fuzzy
 
 	return &FuzzyART{
 		workerPool: make(chan struct{}, runtime.NumCPU()),
-		batchSize:  64,
+		batchSize:  16,
 		wg:         sync.WaitGroup{},
 		tPool: &sync.Pool{
 			New: func() interface{} {

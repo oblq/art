@@ -28,8 +28,7 @@ func New(total, width int) *ProgressBar {
 
 func (pb *ProgressBar) Increment() {
 	pb.current++
-	pb.percentage = int(float64(pb.current) / float64(pb.total) * 100)
-	fmt.Print(pb.Render())
+
 }
 
 func (pb *ProgressBar) Render() string {
@@ -45,7 +44,13 @@ func (pb *ProgressBar) Render() string {
 		samplesPerSecond = float64(pb.current) / elapsed.Seconds()
 	}
 
+	pb.percentage = int(float64(pb.current) / float64(pb.total) * 100)
+
 	return fmt.Sprintf("\r %d%% [%s] (%d/%d, %.0f it/s) | %s | ETA: %s       ",
 		pb.percentage, bar, pb.current, pb.total, samplesPerSecond,
 		elapsed.Round(time.Second), eta.Round(time.Second))
+}
+
+func (pb *ProgressBar) Print() {
+	fmt.Print(pb.Render())
 }

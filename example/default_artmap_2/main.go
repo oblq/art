@@ -9,8 +9,8 @@ import (
 	_ "net/http/pprof"
 
 	"art"
-	"art/example/internal/dataset"
-	"art/example/internal/progress_bar"
+	"art/internal/dataset"
+	"art/internal/progress_bar"
 )
 
 const (
@@ -60,6 +60,9 @@ func test(
 			for i := range digitData {
 				fitFunc(digitData[i], d)
 				pb.Increment()
+				if i%100 == 0 {
+					pb.Print()
+				}
 			}
 		}
 	}
@@ -81,12 +84,15 @@ func test(
 
 	for digit := range 10 {
 		samples := testData[strconv.Itoa(digit)]
-		for _, sample := range samples {
+		for i, sample := range samples {
 			k := predictFunc(sample)
 			if digit == k {
 				exactResults++
 			}
 			pbTest.Increment()
+			if i%100 == 0 {
+				pb.Print()
+			}
 		}
 	}
 

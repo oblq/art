@@ -1,7 +1,7 @@
 package simd
 
 /*
-#cgo CFLAGS: -mavx512f -mavx512vl -mavx512bw -mavx512vnni -mavx512dq
+#cgo CFLAGS: -mavx512f -mavx512vl -mavx512bw -mavx512vnni -mavx512dq -fopenmp
 #cgo LDFLAGS: -lm
 #include <stdio.h>
 #include <math.h>
@@ -16,59 +16,24 @@ double avx512_fuzzy_intersection_float64(const size_t n, double *A, double *w, d
 
     __m512d sum_vec = _mm512_setzero_pd();
 
-    // Process 8 doubles at a time with loop unrolling (2x)
-    size_t i;
-    for(i = 0; i + 1 < end; i += 2) {
-        // Prefetch future data
-        _mm_prefetch((const char*)(A + (i+4) * single_size), _MM_HINT_T0);
-        _mm_prefetch((const char*)(w + (i+4) * single_size), _MM_HINT_T0);
+    // Process 8 doubles at a time
+    for(size_t i = 0; i < end; ++i) {
+            __m512d a_vec = _mm512_loadu_pd(A + i * single_size);
+            __m512d w_vec = _mm512_loadu_pd(w + i * single_size);
+            __m512d min_vec = _mm512_min_pd(a_vec, w_vec);
 
-        // First chunk
-        __m512d a_vec1 = _mm512_loadu_pd(A + i * single_size);
-        __m512d w_vec1 = _mm512_loadu_pd(w + i * single_size);
-        __m512d min_vec1 = _mm512_min_pd(a_vec1, w_vec1);
-
-        // Second chunk
-        __m512d a_vec2 = _mm512_loadu_pd(A + (i+1) * single_size);
-        __m512d w_vec2 = _mm512_loadu_pd(w + (i+1) * single_size);
-        __m512d min_vec2 = _mm512_min_pd(a_vec2, w_vec2);
-
-        // Store results if needed
-        if (intersection_out != NULL) {
-            _mm512_storeu_pd(intersection_out + i * single_size, min_vec1);
-            _mm512_storeu_pd(intersection_out + (i+1) * single_size, min_vec2);
-        }
-
-        // Accumulate sums
-        sum_vec = _mm512_add_pd(sum_vec, min_vec1);
-        sum_vec = _mm512_add_pd(sum_vec, min_vec2);
-    }
-
-    // Handle remaining aligned chunk if any
-    for(; i < end; ++i) {
-        __m512d a_vec = _mm512_loadu_pd(A + i * single_size);
-        __m512d w_vec = _mm512_loadu_pd(w + i * single_size);
-        __m512d min_vec = _mm512_min_pd(a_vec, w_vec);
-
-        if (intersection_out != NULL) {
             _mm512_storeu_pd(intersection_out + i * single_size, min_vec);
+            sum_vec = _mm512_add_pd(sum_vec, min_vec);
         }
-
-        sum_vec = _mm512_add_pd(sum_vec, min_vec);
-    }
-
-    // Reduce sum vector to a single value using AVX-512 intrinsic
+    // Reduce sum vector to a single value
     double sum = _mm512_reduce_add_pd(sum_vec);
 
     // Handle remaining elements
     for(size_t i = end * single_size; i < n; ++i) {
         double min_val = A[i] < w[i] ? A[i] : w[i];
-        if (intersection_out != NULL) {
-            intersection_out[i] = min_val;
-        }
+        intersection_out[i] = min_val;
         sum += min_val;
-    }
-
+        }
     return sum;
 }
 
@@ -80,22 +45,8 @@ double avx512_sum_float64(const size_t n, double *arr)
 
     __m512d sum_vec = _mm512_setzero_pd();
 
-    // Process 8 doubles at a time with loop unrolling (2x)
-    size_t i;
-    for(i = 0; i + 1 < end; i += 2) {
-        // Prefetch future data
-        _mm_prefetch((const char*)(arr + (i+4) * single_size), _MM_HINT_T0);
-
-        // Load and accumulate two chunks at once
-        __m512d arr_vec1 = _mm512_loadu_pd(arr + i * single_size);
-        __m512d arr_vec2 = _mm512_loadu_pd(arr + (i+1) * single_size);
-
-        sum_vec = _mm512_add_pd(sum_vec, arr_vec1);
-        sum_vec = _mm512_add_pd(sum_vec, arr_vec2);
-    }
-
-    // Handle remaining aligned chunk if any
-    for(; i < end; ++i) {
+    // Process 8 doubles at a time
+    for(size_t i = 0; i < end; ++i) {
         __m512d arr_vec = _mm512_loadu_pd(arr + i * single_size);
         sum_vec = _mm512_add_pd(sum_vec, arr_vec);
     }
@@ -105,9 +56,8 @@ double avx512_sum_float64(const size_t n, double *arr)
 
     // Handle remaining elements
     for(size_t i = end * single_size; i < n; ++i) {
-        sum += arr[i];
-    }
-
+                sum += arr[i];
+            }
     return sum;
 }
 */
@@ -133,23 +83,19 @@ func (p *avx512) FuzzyIntersectionSum(A, w []float64, intersection_out []float64
 	if len(w) < size {
 		size = len(w)
 	}
-	if intersection_out != nil && len(intersection_out) < size {
-		intersection_out = nil // Don't write to too-small buffer
+	if len(intersection_out) < size {
+		// Since intersection_out is never nil, just ensure it's large enough
+		size = len(intersection_out)
 	}
 
 	// Ensure size is a multiple of 8 for AVX-512
 	alignedSize := align64(size)
 
-	var intersectionPtr *C.double
-	if intersection_out != nil {
-		intersectionPtr = (*C.double)(&intersection_out[0])
-	}
-
 	sum := C.avx512_fuzzy_intersection_float64(
 		(C.size_t)(alignedSize),
 		(*C.double)(&A[0]),
 		(*C.double)(&w[0]),
-		intersectionPtr,
+		(*C.double)(&intersection_out[0]),
 	)
 
 	return float64(sum)

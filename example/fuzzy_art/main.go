@@ -9,8 +9,8 @@ import (
 	_ "net/http/pprof"
 
 	"art"
-	"art/example/internal/dataset"
-	"art/example/internal/progress_bar"
+	"art/internal/dataset"
+	"art/internal/progress_bar"
 )
 
 const (
@@ -73,6 +73,9 @@ func test(
 					category2Digit[k] = d
 				}
 				pb.Increment()
+				if i%100 == 0 {
+					pb.Print()
+				}
 			}
 		}
 	}
@@ -94,12 +97,15 @@ func test(
 
 	for digit := range 10 {
 		samples := testData[strconv.Itoa(digit)]
-		for _, sample := range samples {
+		for i, sample := range samples {
 			_, k := predictFunc(sample, false)
 			if digit == category2Digit[k] {
 				exactResults++
 			}
 			pbTest.Increment()
+			if i%100 == 0 {
+				pb.Print()
+			}
 		}
 	}
 
