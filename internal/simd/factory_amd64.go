@@ -11,6 +11,7 @@ func hasAVX512() bool {
 		cpu.X86.HasAVX512F &&
 		cpu.X86.HasAVX512VL &&
 		cpu.X86.HasAVX512BW &&
+		cpu.X86.HasAVX512VNNI &&
 		cpu.X86.HasAVX512DQ
 }
 
@@ -20,9 +21,9 @@ func hasAVX2() bool {
 
 func GetProvider() Provider {
 	if hasAVX512() {
-		return new(avx512Provider)
+		return new(avx512)
 	} else if hasAVX2() {
-		return new(avx2Provider)
+		return new(avx2)
 	}
 	return nil
 }

@@ -47,14 +47,15 @@ double accelerate_sum_float64(const size_t n, double *arr) {
 */
 import "C"
 
-// accelerateProvider implements Provider with Apple's Accelerate framework
-type accelerateProvider struct{}
+// accelerate implements Provider with Apple's Accelerate framework
+type accelerate struct{}
 
 func GetProvider() Provider {
-	return new(accelerateProvider)
+	// todo: check if available
+	return new(accelerate)
 }
 
-func (p *accelerateProvider) FuzzyIntersectionSum(A, w []float64, intersection_out []float64) float64 {
+func (p *accelerate) FuzzyIntersectionSum(A, w []float64, intersection_out []float64) float64 {
 	size := len(A)
 
 	var intersectionPtr *C.double
@@ -72,7 +73,7 @@ func (p *accelerateProvider) FuzzyIntersectionSum(A, w []float64, intersection_o
 	return float64(sum)
 }
 
-func (p *accelerateProvider) SumFloat64(arr []float64) float64 {
+func (p *accelerate) SumFloat64(arr []float64) float64 {
 	size := len(arr)
 
 	sum := C.accelerate_sum_float64(

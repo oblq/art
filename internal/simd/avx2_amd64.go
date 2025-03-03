@@ -85,15 +85,15 @@ double avx2_sum_float64(const size_t n, double *arr)
 */
 import "C"
 
-// avx2Provider implements Provider with AVX2 instructions
-type avx2Provider struct{}
+// avx2 implements Provider with AVX2 instructions
+type avx2 struct{}
 
 // Override the factory function
 func newAVX2Provider() Provider {
-	return &avx2Provider{}
+	return &avx2{}
 }
 
-func (p *avx2Provider) FuzzyIntersectionSum(A, w []float64, intersection_out []float64) float64 {
+func (p *avx2) FuzzyIntersectionSum(A, w []float64, intersection_out []float64) float64 {
 	size := len(A)
 
 	var intersectionPtr *C.double
@@ -111,7 +111,7 @@ func (p *avx2Provider) FuzzyIntersectionSum(A, w []float64, intersection_out []f
 	return float64(sum)
 }
 
-func (p *avx2Provider) SumFloat64(arr []float64) float64 {
+func (p *avx2) SumFloat64(arr []float64) float64 {
 	size := len(arr)
 
 	sum := C.avx2_sum_float64(

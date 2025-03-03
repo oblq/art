@@ -32,7 +32,7 @@ type DefaultARTMAP2 struct {
 func NewDefaultARTMAP2(inputDim, numClasses int) *DefaultARTMAP2 {
 	// Initialize with default parameters as mentioned in the paper
 	network := &DefaultARTMAP2{
-		RhoBar:       0.9,  // Default value for maximal code compression
+		RhoBar:       0.9,  // 0 is the default value for maximal code compression
 		Alpha:        0.01, // Default choice parameter
 		Beta:         1.0,  // Fast learning
 		Epsilon:      -0.001,
@@ -89,7 +89,6 @@ func (am *DefaultARTMAP2) choiceFunction(A []float64) []Activation {
 		wSum := simd.SumFloat64(am.w[j])
 
 		activationVal := fuzzyIntersectionSum + (1-am.Alpha)*(float64(am.M)-wSum)
-
 		if activationVal < activationThreshold {
 			// skip nodes with activation value less than threshold
 			continue

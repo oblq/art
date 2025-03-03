@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	TRAIN_SAMPLES_PER_DIGIT = 1000
-	TEST_SAMPLES_PER_DIGIT  = 100
+	TRAIN_SAMPLES_PER_DIGIT = -1
+	TEST_SAMPLES_PER_DIGIT  = -1
 
 	progressBarWidth = 60
 )
@@ -35,12 +35,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	//model, err := art.NewFuzzyART(28*28, 0.9, 0.00000001, 1)
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	model := art.NewFuzzyARTMAP(28*28, 0.9, 1e-8, 1.0)
-	//defer model.Close()
+	model, err := art.NewFuzzyART(28*28, 0.9, 0.00000001, 1)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer model.Close()
 
 	test(trainData, testData, model.Fit, model.Predict)
 	fmt.Printf("Learned categories: %d\n", len(model.W))
@@ -49,12 +48,12 @@ func main() {
 func test(
 	trainData,
 	testData map[string][][]float64,
-	fitFunc func([]float64, string),
-	predictFunc func([]float64) ([]float64, string),
+	fitFunc func([]float64) ([]float64, int),
+	predictFunc func([]float64, bool) ([]float64, int),
 ) {
 	startTime := time.Now()
 
-	//category2Digit := make(map[int]int)
+	category2Digit := make(map[int]int)
 
 	epochs := 1
 	totalSamples := 0
@@ -69,17 +68,10 @@ func test(
 		for d := range 10 {
 			digitData := trainData[strconv.Itoa(d)]
 			for i := range digitData {
-				fitFunc(digitData[i], strconv.Itoa(d))
-				//_, k := fitFunc(digitData[i])
-				//if prevCategoryDigit, ok := category2Digit[k]; ok {
-				//	if prevCategoryDigit != d {
-				//		//log.Printf("category %d identify at least two digits: %d and %d\n",
-				//		//	k, prevCategoryDigit, d)
-				//		//category2Digit[k] = d
-				//	}
-				//} else {
-				//	category2Digit[k] = d
-				//}
+				_, k := fitFunc(digitData[i])
+				if _, ok := category2Digit[k]; !ok {
+					category2Digit[k] = d
+				}
 				pb.Increment()
 			}
 		}
@@ -103,13 +95,10 @@ func test(
 	for digit := range 10 {
 		samples := testData[strconv.Itoa(digit)]
 		for _, sample := range samples {
-			_, k := predictFunc(sample)
-			if strconv.Itoa(digit) == k {
+			_, k := predictFunc(sample, false)
+			if digit == category2Digit[k] {
 				exactResults++
 			}
-			//if digit == category2Digit[k] {
-			//	exactResults++
-			//}
 			pbTest.Increment()
 		}
 	}

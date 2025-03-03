@@ -77,14 +77,14 @@ double neon_sum_float64(const size_t n, double *arr) {
 */
 import "C"
 
-// neonProvider implements Provider with ARM NEON instructions
-type neonProvider struct{}
+// neon implements Provider with ARM NEON instructions
+type neon struct{}
 
 func GetProvider() Provider {
-	return new(neonProvider)
+	return new(neon)
 }
 
-func (p *neonProvider) FuzzyIntersectionSum(A, w []float64, intersection_out []float64) float64 {
+func (p *neon) FuzzyIntersectionSum(A, w []float64, intersection_out []float64) float64 {
 	size := len(A)
 
 	var intersectionPtr *C.double
@@ -102,7 +102,7 @@ func (p *neonProvider) FuzzyIntersectionSum(A, w []float64, intersection_out []f
 	return float64(sum)
 }
 
-func (p *neonProvider) SumFloat64(arr []float64) float64 {
+func (p *neon) SumFloat64(arr []float64) float64 {
 	size := len(arr)
 
 	sum := C.neon_sum_float64(

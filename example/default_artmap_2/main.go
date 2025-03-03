@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	TRAIN_SAMPLES_PER_DIGIT = 1000
-	TEST_SAMPLES_PER_DIGIT  = 100
+	TRAIN_SAMPLES_PER_DIGIT = -1
+	TEST_SAMPLES_PER_DIGIT  = -1
 
 	progressBarWidth = 60
 )

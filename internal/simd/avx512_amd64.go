@@ -116,17 +116,17 @@ import (
 	"math"
 )
 
-// avx2Provider implements Provider with AVX2 instructions
-type avx512Provider struct{}
+// avx2 implements Provider with AVX2 instructions
+type avx512 struct{}
 
 // Override the factory function
 func newAVX512Provider() Provider {
-	return new(avx512Provider)
+	return new(avx512)
 }
 
 // FuzzyIntersectionSum computes elementwise min between A and w and returns the sum
 // If intersection_out is not nil, it also stores the intersection result
-func (p *avx512Provider) FuzzyIntersectionSum(A, w []float64, intersection_out []float64) float64 {
+func (p *avx512) FuzzyIntersectionSum(A, w []float64, intersection_out []float64) float64 {
 	size := len(A)
 
 	// Safety check
@@ -156,7 +156,7 @@ func (p *avx512Provider) FuzzyIntersectionSum(A, w []float64, intersection_out [
 }
 
 // SumFloat64 computes the sum of all elements in the array using AVX-512
-func (p *avx512Provider) SumFloat64(arr []float64) float64 {
+func (p *avx512) SumFloat64(arr []float64) float64 {
 	size := len(arr)
 	alignedSize := align64(size)
 

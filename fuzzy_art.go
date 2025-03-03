@@ -5,6 +5,8 @@ import (
 	"runtime"
 	"sort"
 	"sync"
+
+	"art/internal/simd"
 )
 
 type FuzzyART struct {
@@ -61,7 +63,7 @@ func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*Fuzzy
 
 	return &FuzzyART{
 		workerPool: make(chan struct{}, runtime.NumCPU()),
-		batchSize:  16,
+		batchSize:  64,
 		wg:         sync.WaitGroup{},
 		tPool: &sync.Pool{
 			New: func() interface{} {
@@ -131,12 +133,12 @@ func (m *FuzzyART) choice(A, W, fuzzyIntersection []float64) (choice float64, fi
 }
 
 type activation struct {
+	fuzzyIntersection    []float64
+	fuzzyIntersectionSum float64
+	// activation value, choice function value
+	t float64
 	// index of the category weights
 	j int
-	// activation value, choice function value
-	t                    float64
-	fuzzyIntersectionSum float64
-	fuzzyIntersection    []float64
 }
 
 // categoryChoices implements the recognition field functionality
@@ -178,7 +180,9 @@ func (m *FuzzyART) categoryChoices(A []float64) (T []*activation) {
 			for i, category := range categories {
 				u := m.tPool.Get().(*activation)
 				u.j = startIndex + i
-				u.t, u.fuzzyIntersectionSum = m.choice(input, category, u.fuzzyIntersection)
+				//u.t, u.fuzzyIntersectionSum = m.choice(input, category, u.fuzzyIntersection)
+				u.fuzzyIntersectionSum = simd.FuzzyIntersectionSum(A, category, u.fuzzyIntersection)
+				u.t = u.fuzzyIntersectionSum / (m.alpha + simd.SumFloat64(category))
 				activations[i] = u
 			}
 			activationsCh <- activations
@@ -221,7 +225,8 @@ func (m *FuzzyART) resonateOrReset(
 	A []float64,
 	T []*activation,
 ) (categoryWeights []float64, categoryIndex int) {
-	iNorm := m.sum(A)
+	//iNorm := m.sum(A)
+	iNorm := simd.SumFloat64(A)
 
 	for _, t := range T {
 		resonance := m.match(t.fuzzyIntersectionSum, iNorm)
@@ -250,18 +255,18 @@ func (m *FuzzyART) recover(T []*activation) {
 	}
 }
 
-// Train implements the complete ART learning cycle.
-func (m *FuzzyART) Train(a []float64) ([]float64, int) {
+// Fit implements the complete ART learning cycle.
+func (m *FuzzyART) Fit(a []float64) ([]float64, int) {
 	A := m.complementCode(a)
 	T := m.categoryChoices(A)
 	defer m.recover(T)
 	return m.resonateOrReset(A, T)
 }
 
-// Infer implements the recognition process with optional learning.
+// Predict implements the recognition process with optional learning.
 // It returns the weight vector of the best matching category and its index.
 // If learn is true, it updates the weights of the matching category.
-func (m *FuzzyART) Infer(a []float64, learn bool) ([]float64, int) {
+func (m *FuzzyART) Predict(a []float64, learn bool) ([]float64, int) {
 	A := m.complementCode(a)
 	T := m.categoryChoices(A)
 	defer m.recover(T)
