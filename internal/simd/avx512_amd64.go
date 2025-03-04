@@ -1,3 +1,5 @@
+//go:build amd64
+
 package simd
 
 /*
@@ -83,9 +85,58 @@ double avx512_sum_float64(const size_t n, double *arr)
 
     return sum;
 }
+
+// Find top k activations using a stream-based approach
+void avx512_top_k_activations(
+    const size_t n,
+    double *choices,
+    int *indices,
+    double *top_k_values,
+    int *top_k_indices,
+    const size_t k)
+{
+    // Initialize with invalid values
+    for (size_t i = 0; i < k; i++) {
+        top_k_values[i] = -INFINITY;
+        top_k_indices[i] = -1;
+    }
+
+    // Stream through all activations, maintaining top k
+    for (size_t i = 0; i < n; i++) {
+        double val = choices[i];
+        int idx = indices[i];
+
+        // Find insertion position based on value and tie-breaking
+        size_t pos = k;
+        for (size_t j = 0; j < k; j++) {
+            if (val > top_k_values[j] ||
+                (val == top_k_values[j] && idx < top_k_indices[j])) {
+                pos = j;
+                break;
+            }
+        }
+
+        // If an insertion position was found, shift and insert
+        if (pos < k) {
+            // Shift elements down
+            for (size_t j = k-1; j > pos; j--) {
+                top_k_values[j] = top_k_values[j-1];
+                top_k_indices[j] = top_k_indices[j-1];
+            }
+            // Insert the new value
+            top_k_values[pos] = val;
+            top_k_indices[pos] = idx;
+        }
+    }
+}
 */
 import "C"
-import "math"
+import (
+	"math"
+	"unsafe"
+
+	"golang.org/x/sys/cpu"
+)
 
 // avx2 implements Provider with AVX2 instructions
 type avx512 struct{}
@@ -126,7 +177,56 @@ func (p *avx512) SumFloat64(arr []float64) float64 {
 	return float64(sum)
 }
 
+// TopKActivations finds the top k activations and their indices
+// Returns two slices: values and their corresponding indices
+func (p *avx512) TopKActivations(choices []float64, indices []int, k int) ([]float64, []int) {
+	n := len(choices)
+	if n == 0 || k <= 0 {
+		return []float64{}, []int{}
+	}
+
+	// Ensure k doesn't exceed array length
+	if k > n {
+		k = n
+	}
+
+	// Prepare output arrays
+	topValues := make([]float64, k)
+	topIndices := make([]int, k)
+
+	// Convert Go slices to C arrays
+	choicesPtr := (*C.double)(unsafe.Pointer(&choices[0]))
+	indicesPtr := (*C.int)(unsafe.Pointer(&indices[0]))
+	topValuesPtr := (*C.double)(unsafe.Pointer(&topValues[0]))
+	topIndicesPtr := (*C.int)(unsafe.Pointer(&topIndices[0]))
+
+	// Call C function
+	C.avx512_top_k_activations(
+		C.size_t(n),
+		choicesPtr,
+		indicesPtr,
+		topValuesPtr,
+		topIndicesPtr,
+		C.size_t(k),
+	)
+
+	return topValues, topIndices
+}
+
 // align64 rounds up size to the nearest multiple of 8 (AVX-512 register can hold 8 doubles)
 func align64(size int) int {
 	return int(math.Ceil(float64(size)/8.0) * 8.0)
+}
+
+func hasAVX512() bool {
+	return cpu.X86.HasAVX512 &&
+		cpu.X86.HasAVX512F &&
+		cpu.X86.HasAVX512DQ
+}
+
+func GetProvider() Provider {
+	if hasAVX512() {
+		return new(avx512)
+	}
+	return nil
 }
