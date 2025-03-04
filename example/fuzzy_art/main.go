@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	TRAIN_SAMPLES_PER_DIGIT = 1000
-	TEST_SAMPLES_PER_DIGIT  = 100
+	TRAIN_SAMPLES_PER_DIGIT = -1
+	TEST_SAMPLES_PER_DIGIT  = -1
 
 	progressBarWidth = 60
 )
@@ -48,8 +48,8 @@ func main() {
 func test(
 	trainData,
 	testData map[string][][]float64,
-	fitFunc func([]float64) ([]float64, int),
-	predictFunc func([]float64, bool) ([]float64, int),
+	fitFunc func([]float64) (float64, int),
+	predictFunc func([]float64, bool) (float64, int),
 ) {
 	startTime := time.Now()
 

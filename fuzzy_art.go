@@ -3,10 +3,10 @@ package art
 import (
 	"fmt"
 	"runtime"
-	"slices"
 	"sync"
 
 	"art/internal/simd"
+	"github.com/jfcg/sorty/v2"
 )
 
 type FuzzyART struct {
@@ -45,7 +45,10 @@ type FuzzyART struct {
 	// Decrease beta for more stable learning, which can be beneficial for more stable environments.
 	beta float64
 
-	// Weight matrix - stores category prototypes
+	// M is the number of features of the input
+	M int
+
+	// W is the weight matrix - stores category prototypes
 	W [][]float64
 	T []*activation
 }
@@ -63,11 +66,12 @@ func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*Fuzzy
 
 	return &FuzzyART{
 		workerPool: make(chan struct{}, runtime.NumCPU()),
-		batchSize:  64,
+		batchSize:  16,
 		wg:         sync.WaitGroup{},
 		rho:        rho,
 		alpha:      alpha,
 		beta:       beta,
+		M:          inputLen,
 		W:          make([][]float64, 0),
 		T:          make([]*activation, 0),
 	}, nil
@@ -135,11 +139,9 @@ type activation struct {
 	j int
 }
 
-// activateCategories implements the recognition field functionality
-// by computing activation values for each category based on the input vector.
-// The sorting process also implicitly handles lateral inhibition by prioritizing
-// the category with the highest activation, thereby inhibiting others.
-func (m *FuzzyART) activateCategories(A []float64) {
+// prepareClusterActivation initializes or expands
+// the T slice to accommodate all weights in W.
+func (m *FuzzyART) prepareClusterActivation() {
 	if len(m.T) < len(m.W) {
 		// Keep existing activations but ensure T is at least as long as W
 		if len(m.T) < len(m.W) {
@@ -150,12 +152,20 @@ func (m *FuzzyART) activateCategories(A []float64) {
 			// initialize the new activation
 			lastIndex := len(m.T)
 			newT[lastIndex] = &activation{
-				fi: make([]float64, len(A)),
+				fi: make([]float64, len(m.W[0])),
 			}
 			// Update T with the new slice
 			m.T = newT
 		}
 	}
+}
+
+// activateCategories implements the recognition field functionality
+// by computing activation values for each category based on the input vector.
+// The sorting process also implicitly handles lateral inhibition by prioritizing
+// the category with the highest activation, thereby inhibiting others.
+func (m *FuzzyART) activateCategories(A []float64) {
+	m.prepareClusterActivation()
 
 	activationsCh := make(chan []*activation, len(m.workerPool)*m.batchSize)
 	defer close(activationsCh)
@@ -202,21 +212,41 @@ func (m *FuzzyART) activateCategories(A []float64) {
 	m.wg.Wait()
 
 	// Sort category indices by activation values in descending order
-	slices.SortFunc(m.T, func(a, b *activation) int {
-		// In case of equal activation values, sort by category index,
-		// because older categories must have the priority.
-		if a.choice == b.choice {
-			if a.j < b.j {
-				return -1
-			} else {
-				return 1
+	//slices.SortFunc(m.T, func(a, b *activation) int {
+	//	// In case of equal activation values, sort by category index,
+	//	// because older categories must have the priority.
+	//	if a.choice == b.choice {
+	//		if a.j < b.j {
+	//			return -1
+	//		} else {
+	//			return 1
+	//		}
+	//	}
+	//	if a.choice > b.choice {
+	//		return -1
+	//	}
+	//	return 1
+	//})
+
+	lsw := func(i, k, r, s int) bool {
+		if m.T[i].choice == m.T[k].choice { // strict comparator like < or >
+			if m.T[i].j < m.T[k].j { // strict comparator like < or >
+				if r != s {
+					m.T[r], m.T[s] = m.T[s], m.T[r]
+				}
+				return true
 			}
+			return false
 		}
-		if a.choice > b.choice {
-			return -1
+		if m.T[i].choice > m.T[k].choice { // strict comparator like < or >
+			if r != s {
+				m.T[r], m.T[s] = m.T[s], m.T[r]
+			}
+			return true
 		}
-		return 1
-	})
+		return false
+	}
+	sorty.Sort(len(m.T), lsw)
 }
 
 // matchCriterion computes the matchCriterion function.
@@ -238,9 +268,9 @@ func (m *FuzzyART) matchCriterion(fiNorm, aNorm float64) float64 {
 // in which case a new category is created.
 func (m *FuzzyART) resonateOrReset(
 	A []float64,
-) (categoryWeights []float64, categoryIndex int) {
+) (resonance float64, categoryIndex int) {
 	//aNorm := m.l1Norm(A)
-	aNorm := simd.SumFloat64(A)
+	//aNorm := simd.SumFloat64(A)
 
 	//// Get top k activations (use a reasonable number based on your application)
 	//// For ART, we might only need a few categories, so k could be small
@@ -254,12 +284,12 @@ func (m *FuzzyART) resonateOrReset(
 	//	choices[i] = t.choice
 	//	indices[i] = t.j
 	//}
-
+	//
 	//_, topIndices := simd.TopKActivations(choices, indices, topK)
 	//for _, j := range topIndices {
 	//	t := m.T[j]
 	for _, t := range m.T {
-		resonance := m.matchCriterion(t.fiNorm, aNorm)
+		resonance = m.matchCriterion(t.fiNorm, float64(m.M))
 		if resonance >= m.rho {
 			newW := make([]float64, len(A))
 			for k := range newW {
@@ -267,19 +297,18 @@ func (m *FuzzyART) resonateOrReset(
 			}
 
 			m.W[t.j] = newW
-			return newW, t.j
+			return resonance, t.j
 		}
 	}
 
 	// If no category meets the vigilance criterion, create a new category.
 	// Fast commitment option, directly copy the input vector as the new category.
 	m.W = append(m.W, A)
-
-	return m.W[len(m.W)-1], len(m.W) - 1
+	return resonance, len(m.W) - 1
 }
 
 // Fit implements the complete ART learning cycle.
-func (m *FuzzyART) Fit(a []float64) ([]float64, int) {
+func (m *FuzzyART) Fit(a []float64) (resonance float64, categoryIndex int) {
 	A := m.complementCode(a)
 	m.activateCategories(A)
 	return m.resonateOrReset(A)
@@ -288,11 +317,13 @@ func (m *FuzzyART) Fit(a []float64) ([]float64, int) {
 // Predict implements the recognition process with optional learning.
 // It returns the weight vector of the best matching category and its index.
 // If learn is true, it updates the weights of the matching category.
-func (m *FuzzyART) Predict(a []float64, learn bool) ([]float64, int) {
+func (m *FuzzyART) Predict(a []float64, learn bool) (resonance float64, categoryIndex int) {
 	A := m.complementCode(a)
 	m.activateCategories(A)
 	if !learn {
-		return m.W[m.T[0].j], m.T[0].j
+		aNorm := simd.SumFloat64(A)
+		resonance = m.matchCriterion(m.T[0].fiNorm, aNorm)
+		return resonance, m.T[0].j
 	}
 
 	return m.resonateOrReset(A)
