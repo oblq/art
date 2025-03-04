@@ -66,7 +66,7 @@ func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*Fuzzy
 
 	return &FuzzyART{
 		workerPool: make(chan struct{}, runtime.NumCPU()),
-		batchSize:  128,
+		batchSize:  64,
 		wg:         sync.WaitGroup{},
 		rho:        rho,
 		alpha:      alpha,
@@ -139,34 +139,11 @@ type activation struct {
 	j int
 }
 
-// prepareClusterActivation initializes or expands
-// the T slice to accommodate all weights in W.
-func (m *FuzzyART) prepareClusterActivation() {
-	if len(m.T) < len(m.W) {
-		// Keep existing activations but ensure T is at least as long as W
-		if len(m.T) < len(m.W) {
-			// Create a new slice with capacity for all weights
-			newT := make([]*activation, len(m.W))
-			// Copy existing activation instances
-			copy(newT, m.T)
-			// initialize the new activation
-			lastIndex := len(m.T)
-			newT[lastIndex] = &activation{
-				fi: make([]float64, len(m.W[0])),
-			}
-			// Update T with the new slice
-			m.T = newT
-		}
-	}
-}
-
 // activateCategories implements the recognition field functionality
 // by computing activation values for each category based on the input vector.
 // The sorting process also implicitly handles lateral inhibition by prioritizing
 // the category with the highest activation, thereby inhibiting others.
 func (m *FuzzyART) activateCategories(A []float64) {
-	m.prepareClusterActivation()
-
 	activationsCh := make(chan []*activation, len(m.workerPool)*m.batchSize)
 	defer close(activationsCh)
 	go func() {
@@ -260,6 +237,27 @@ func (m *FuzzyART) matchCriterion(fiNorm, aNorm float64) float64 {
 	}
 }
 
+// extendClusterActivation initializes or expands
+// the T slice to accommodate all weights in W.
+func (m *FuzzyART) extendClusterActivation() {
+	if len(m.T) < len(m.W) {
+		// Keep existing activations but ensure T is at least as long as W
+		if len(m.T) < len(m.W) {
+			// Create a new slice with capacity for all weights
+			newT := make([]*activation, len(m.W))
+			// Copy existing activation instances
+			copy(newT, m.T)
+			// initialize the new activation
+			lastIndex := len(m.T)
+			newT[lastIndex] = &activation{
+				fi: make([]float64, len(m.W[0])),
+			}
+			// Update T with the new slice
+			m.T = newT
+		}
+	}
+}
+
 // resonateOrReset implements the resonance or reset logic.
 // If the best matching category passes the vigilance test (>= rho),
 // its weights are updated to move closer to the input vector, facilitating learning.
@@ -272,22 +270,6 @@ func (m *FuzzyART) resonateOrReset(
 	//aNorm := m.l1Norm(A)
 	//aNorm := simd.SumFloat64(A)
 
-	//// Get top k activations (use a reasonable number based on your application)
-	//// For ART, we might only need a few categories, so k could be small
-	//topK := min(len(m.T), 10) // Adjust based on your needs
-	//
-	//// Extract choices and indices arrays for vectorized processing
-	//choices := make([]float64, len(m.T))
-	//indices := make([]int, len(m.T))
-	//
-	//for i, t := range m.T {
-	//	choices[i] = t.choice
-	//	indices[i] = t.j
-	//}
-	//
-	//_, topIndices := simd.TopKActivations(choices, indices, topK)
-	//for _, j := range topIndices {
-	//	t := m.T[j]
 	for _, t := range m.T {
 		resonance = m.matchCriterion(t.fiNorm, float64(m.M))
 		if resonance >= m.rho {
@@ -304,6 +286,7 @@ func (m *FuzzyART) resonateOrReset(
 	// If no category meets the vigilance criterion, create a new category.
 	// Fast commitment option, directly copy the input vector as the new category.
 	m.W = append(m.W, A)
+	m.extendClusterActivation()
 	return resonance, len(m.W) - 1
 }
 
@@ -321,8 +304,8 @@ func (m *FuzzyART) Predict(a []float64, learn bool) (resonance float64, category
 	A := m.complementCode(a)
 	m.activateCategories(A)
 	if !learn {
-		aNorm := simd.SumFloat64(A)
-		resonance = m.matchCriterion(m.T[0].fiNorm, aNorm)
+		//aNorm := simd.SumFloat64(A)
+		resonance = m.matchCriterion(m.T[0].fiNorm, float64(m.M))
 		return resonance, m.T[0].j
 	}
 
