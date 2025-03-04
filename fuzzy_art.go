@@ -180,8 +180,8 @@ func (m *FuzzyART) activateCategories(A []float64) (T []*activation) {
 				u := m.tPool.Get().(*activation)
 				u.j = startIndex + i
 				//u.choice, u.fiNorm = m.categoryChoice(input, category, u.fi)
-				u.fuzzyIntersectionSum = simd.FuzzyIntersectionSum(A, category, u.fuzzyIntersection)
-				u.t = u.fuzzyIntersectionSum / (m.alpha + simd.SumFloat64(category))
+				u.fiNorm = simd.FuzzyIntersectionSum(A, category, u.fi)
+				u.choice = u.fiNorm / (m.alpha + simd.SumFloat64(category))
 				activations[i] = u
 			}
 			activationsCh <- activations
