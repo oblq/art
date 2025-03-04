@@ -36,15 +36,9 @@ func GetProvider() Provider {
 }
 
 func (p *accelerate) FuzzyIntersectionSum(A, w []float64, intersection_out []float64) float64 {
-	size := len(A)
-
-	var intersectionPtr *C.double
-	if intersection_out != nil {
-		intersectionPtr = (*C.double)(&intersection_out[0])
-	}
-
+	var intersectionPtr = (*C.double)(&intersection_out[0])
 	sum := C.accelerate_fuzzy_intersection_float64(
-		(C.size_t)(size),
+		(C.size_t)(len(A)),
 		(*C.double)(&A[0]),
 		(*C.double)(&w[0]),
 		intersectionPtr,
@@ -54,10 +48,8 @@ func (p *accelerate) FuzzyIntersectionSum(A, w []float64, intersection_out []flo
 }
 
 func (p *accelerate) SumFloat64(arr []float64) float64 {
-	size := len(arr)
-
 	sum := C.accelerate_sum_float64(
-		(C.size_t)(size),
+		(C.size_t)(len(arr)),
 		(*C.double)(&arr[0]),
 	)
 
