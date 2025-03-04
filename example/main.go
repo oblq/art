@@ -37,7 +37,7 @@ func main() {
 	}
 	defer model.Close()
 
-	test(trainData, testData, model.Train, model.Infer)
+	test(trainData, testData, model.Fit, model.Predict)
 }
 
 func test(
