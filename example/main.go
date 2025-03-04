@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"art"
+	"art/internal/progress_bar"
 )
 
 const (
@@ -56,7 +57,7 @@ func test(
 	}
 
 	fmt.Println("Training progress:")
-	pb := NewProgressBar(epochs*totalSamples, progressBarWidth)
+	pb := progress_bar.New(epochs*totalSamples, progressBarWidth)
 
 	for e := 0; e < epochs; e++ {
 		for d := range 10 {
@@ -90,7 +91,7 @@ func test(
 	}
 
 	fmt.Println("Testing progress:")
-	pbTest := NewProgressBar(samplesCount, progressBarWidth)
+	pbTest := progress_bar.New(samplesCount, progressBarWidth)
 
 	for digit := range 10 {
 		samples := testData[strconv.Itoa(digit)]
