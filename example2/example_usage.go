@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"art"
+	"art" // Import the art package containing the FuzzyART wrapper
 	"art/internal/progress_bar"
 )
 
@@ -31,20 +31,28 @@ func main() {
 		log.Fatal(err)
 	}
 
-	model, err := art.NewFuzzyART(28*28, 0.9, 0.00000001, 1)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer model.Close()
+	// Parameters for the FuzzyART model
+	inputDim := 16 // Using 16 for AVX-512 alignment
+	rho := 0.8     // Vigilance parameter
+	alpha := 0.01  // Choice parameter
+	beta := 1.0    // Learning rate
 
-	test(trainData, testData, model.Fit, model.Predict)
+	// Create a new FuzzyART model
+	art, err := art.NewFuzzyART(inputDim, rho, alpha, beta)
+	if err != nil {
+		fmt.Printf("Error creating FuzzyART model: %v\n", err)
+		return
+	}
+	defer art.Close() // Ensure C++ resources are freed
+
+	test(trainData, testData, art.Fit, art.Predict)
 }
 
 func test(
 	trainData,
 	testData map[string][][]float64,
-	trainFunc func([]float64) ([]float64, int),
-	inferFunc func([]float64, bool) ([]float64, int),
+	trainFunc func([]float64) ([]float64, int, error),
+	inferFunc func([]float64, bool) ([]float64, int, error),
 ) {
 	startTime := time.Now()
 
@@ -63,7 +71,7 @@ func test(
 		for d := range 10 {
 			digitData := trainData[strconv.Itoa(d)]
 			for i := range digitData {
-				_, k := trainFunc(digitData[i])
+				_, k, _ := trainFunc(digitData[i])
 				if prevCategoryDigit, ok := category2Digit[k]; ok {
 					if prevCategoryDigit != d {
 						//log.Printf("category %d identify at least two digits: %d and %d\n",
@@ -96,7 +104,7 @@ func test(
 	for digit := range 10 {
 		samples := testData[strconv.Itoa(digit)]
 		for _, sample := range samples {
-			_, k := inferFunc(sample, false)
+			_, k, _ := inferFunc(sample, false)
 			if digit == category2Digit[k] {
 				exactResults++
 			}

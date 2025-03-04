@@ -1,0 +1,132 @@
+package simd
+
+/*
+#cgo CFLAGS: -mavx512f -mavx512dq
+#cgo LDFLAGS: -lm
+#include <stdio.h>
+#include <math.h>
+#include <stdlib.h>
+#include <x86intrin.h>
+
+// Computes the fuzzy intersection (elementwise min) between two arrays and returns the sum
+double avx512_fuzzy_intersection_float64(const size_t n, double *A, double *w, double *intersection_out)
+{
+    static const size_t single_size = 8; // 8 doubles per AVX-512 register
+    static const size_t chunk_size = 2 * single_size; // Process 2 chunks (16 doubles) per iteration
+    const size_t end = n / chunk_size;
+
+    __m512d sum_vec1 = _mm512_setzero_pd();
+    __m512d sum_vec2 = _mm512_setzero_pd();
+
+    // Process 16 doubles (2 chunks) at a time
+    for(size_t i = 0; i < end; ++i) {
+        size_t offset = i * chunk_size;
+
+        // First chunk
+        __m512d a_vec1 = _mm512_loadu_pd(A + offset);
+        __m512d w_vec1 = _mm512_loadu_pd(w + offset);
+        __m512d min_vec1 = _mm512_min_pd(a_vec1, w_vec1);
+        _mm512_storeu_pd(intersection_out + offset, min_vec1);
+        sum_vec1 = _mm512_add_pd(sum_vec1, min_vec1);
+
+        // Second chunk
+        __m512d a_vec2 = _mm512_loadu_pd(A + offset + single_size);
+        __m512d w_vec2 = _mm512_loadu_pd(w + offset + single_size);
+        __m512d min_vec2 = _mm512_min_pd(a_vec2, w_vec2);
+        _mm512_storeu_pd(intersection_out + offset + single_size, min_vec2);
+        sum_vec2 = _mm512_add_pd(sum_vec2, min_vec2);
+    }
+
+    // Combine sums from both vectors
+    double sum = _mm512_reduce_add_pd(sum_vec1) + _mm512_reduce_add_pd(sum_vec2);
+
+    // Handle remaining elements
+    for(size_t i = end * chunk_size; i < n; ++i) {
+        double min_val = A[i] < w[i] ? A[i] : w[i];
+        intersection_out[i] = min_val;
+        sum += min_val;
+    }
+
+    return sum;
+}
+
+// Computes the sum of an array using AVX-512 with 2 chunks per iteration
+double avx512_sum_float64(const size_t n, double *arr)
+{
+    static const size_t single_size = 8; // 8 doubles per AVX-512 register
+    static const size_t chunk_count = 2; // Process 2 chunks per iteration
+    const size_t chunk_size = single_size * chunk_count; // 16 doubles per iteration
+    const size_t end = n / chunk_size;
+
+    __m512d sum_vec1 = _mm512_setzero_pd();
+    __m512d sum_vec2 = _mm512_setzero_pd();
+
+    // Process 16 doubles at a time (2 chunks of 8 doubles each)
+    for(size_t i = 0; i < end; ++i) {
+        __m512d arr_vec1 = _mm512_loadu_pd(arr + i * chunk_size);
+        __m512d arr_vec2 = _mm512_loadu_pd(arr + i * chunk_size + single_size);
+
+        sum_vec1 = _mm512_add_pd(sum_vec1, arr_vec1);
+        sum_vec2 = _mm512_add_pd(sum_vec2, arr_vec2);
+    }
+
+    // Combine the two sum vectors
+    __m512d total_sum_vec = _mm512_add_pd(sum_vec1, sum_vec2);
+
+    // Reduce sum vector to a single value using AVX-512 intrinsic
+    double sum = _mm512_reduce_add_pd(total_sum_vec);
+
+    // Handle remaining elements
+    for(size_t i = end * chunk_size; i < n; ++i) {
+        sum += arr[i];
+    }
+
+    return sum;
+}
+*/
+import "C"
+import "math"
+
+// avx2 implements Provider with AVX2 instructions
+type avx512 struct{}
+
+// Override the factory function
+func newAVX512Provider() Provider {
+	return new(avx512)
+}
+
+// FuzzyIntersectionSum computes elementwise min between A and w and returns the sum
+// If intersection_out is not nil, it also stores the intersection result
+func (p *avx512) FuzzyIntersectionSum(A, w []float64, intersectionOut []float64) float64 {
+	size := len(A)
+
+	// Ensure size is a multiple of 8 for AVX-512
+	alignedSize := align64(size)
+
+	sum := C.avx512_fuzzy_intersection_float64(
+		(C.size_t)(alignedSize),
+		(*C.double)(&A[0]),
+		(*C.double)(&w[0]),
+		(*C.double)(&intersectionOut[0]),
+	)
+
+	return float64(sum)
+}
+
+// SumFloat64 computes the sum of all elements in the array using AVX-512
+func (p *avx512) SumFloat64(arr []float64) float64 {
+	size := len(arr)
+	alignedSize := align64(size)
+
+	sum := C.avx512_sum_float64(
+		(C.size_t)(alignedSize),
+		(*C.double)(&arr[0]),
+	)
+
+	return float64(sum)
+}
+
+// align64 rounds up size to the nearest multiple of 8 (AVX-512 register can hold 8 doubles)
+func align64(size int) int {
+	return int(math.Ceil(float64(size)/8.0) * 8.0)
+}
