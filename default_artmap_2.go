@@ -1,7 +1,7 @@
 package art
 
 import (
-	"sort"
+	"slices"
 
 	"art/internal/simd"
 )
@@ -106,13 +106,20 @@ func (am *DefaultARTMAP2) choiceFunction(A []float64) []Activation {
 	}
 
 	// Sort category val values indices by val values in descending order
-	sort.SliceStable(T, func(a, b int) bool {
-		// In case of equal val values, sort by category index,
+	slices.SortFunc(T, func(a, b Activation) int {
+		// In case of equal activation values, sort by category index,
 		// because older categories must have the priority.
-		if T[a].val == T[b].val {
-			return T[a].j < T[b].j
+		if a.val == b.val {
+			if a.j < b.j {
+				return -1
+			} else {
+				return 1
+			}
 		}
-		return T[a].val > T[b].val
+		if a.val > b.val {
+			return -1
+		}
+		return 1
 	})
 
 	return T

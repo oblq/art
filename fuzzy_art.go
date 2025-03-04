@@ -3,6 +3,7 @@ package art
 import (
 	"fmt"
 	"runtime"
+	"slices"
 	"sync"
 
 	"art/internal/simd"
@@ -201,14 +202,21 @@ func (m *FuzzyART) activateCategories(A []float64) {
 	m.wg.Wait()
 
 	// Sort category indices by activation values in descending order
-	//sort.SliceStable(m.T, func(a, b int) bool {
-	//	// In case of equal activation values, sort by category index,
-	//	// because older categories must have the priority.
-	//	if m.T[a].choice == m.T[b].choice {
-	//		return m.T[a].j < m.T[b].j
-	//	}
-	//	return m.T[a].choice > m.T[b].choice
-	//})
+	slices.SortFunc(m.T, func(a, b *activation) int {
+		// In case of equal activation values, sort by category index,
+		// because older categories must have the priority.
+		if a.choice == b.choice {
+			if a.j < b.j {
+				return -1
+			} else {
+				return 1
+			}
+		}
+		if a.choice > b.choice {
+			return -1
+		}
+		return 1
+	})
 }
 
 // matchCriterion computes the matchCriterion function.
@@ -234,24 +242,23 @@ func (m *FuzzyART) resonateOrReset(
 	//aNorm := m.l1Norm(A)
 	aNorm := simd.SumFloat64(A)
 
-	// Get top k activations (use a reasonable number based on your application)
-	// For ART, we might only need a few categories, so k could be small
-	topK := min(len(m.T), 10) // Adjust based on your needs
+	//// Get top k activations (use a reasonable number based on your application)
+	//// For ART, we might only need a few categories, so k could be small
+	//topK := min(len(m.T), 10) // Adjust based on your needs
+	//
+	//// Extract choices and indices arrays for vectorized processing
+	//choices := make([]float64, len(m.T))
+	//indices := make([]int, len(m.T))
+	//
+	//for i, t := range m.T {
+	//	choices[i] = t.choice
+	//	indices[i] = t.j
+	//}
 
-	// Extract choices and indices arrays for vectorized processing
-	choices := make([]float64, len(m.T))
-	indices := make([]int, len(m.T))
-
-	for i, t := range m.T {
-		choices[i] = t.choice
-		indices[i] = t.j
-	}
-
-	_, topIndices := simd.TopKActivations(choices, indices, topK)
-	for _, j := range topIndices {
-
-		//for _, t := range m.T {
-		t := m.T[j]
+	//_, topIndices := simd.TopKActivations(choices, indices, topK)
+	//for _, j := range topIndices {
+	//	t := m.T[j]
+	for _, t := range m.T {
 		resonance := m.matchCriterion(t.fiNorm, aNorm)
 		if resonance >= m.rho {
 			newW := make([]float64, len(A))
