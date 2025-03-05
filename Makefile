@@ -28,4 +28,4 @@ trace:
 
 # call this when running the example
 get-trace:
-	curl localhost:5555/debug/pprof/trace?milliseconds=1 > trace.out && go tool trace trace.out
+	curl localhost:5555/debug/pprof/trace?seconds=10 > trace.out && go tool trace trace.out
