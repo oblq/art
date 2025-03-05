@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -21,21 +22,21 @@ const (
 )
 
 func main() {
-	//go func() {
-	//	log.Fatal(http.ListenAndServe("0.0.0.0:5555", nil))
-	//}()
+	go func() {
+		log.Fatal(http.ListenAndServe("0.0.0.0:5555", nil))
+	}()
 
-	trainData, err := dataset.GetData("../mnist/mnist_train.csv", TRAIN_SAMPLES_PER_DIGIT, false)
+	trainData, err := dataset.GetData("../../testdata/mnist_train.csv", TRAIN_SAMPLES_PER_DIGIT, false)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	testData, err := dataset.GetData("../mnist/mnist_test.csv", TEST_SAMPLES_PER_DIGIT, false)
+	testData, err := dataset.GetData("../../testdata/mnist_test.csv", TEST_SAMPLES_PER_DIGIT, false)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	model, err := art.NewFuzzyART(28*28, 0.9, 0.00000001, 1)
+	model, err := art.NewFuzzyART(28*28, 0.9, 0.01, 1)
 	if err != nil {
 		log.Fatal(err)
 	}

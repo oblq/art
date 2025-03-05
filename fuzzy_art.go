@@ -9,6 +9,56 @@ import (
 	"github.com/jfcg/sorty/v2"
 )
 
+type activation struct {
+	// fuzzy intersection
+	fi []float64
+	// L1 norm of the fuzzy intersection
+	fiNorm float64
+	wNorm  float64
+	// activation value, choice function value
+	choice float64
+	// index of the category weights
+	j int
+}
+
+type job struct {
+	input       []float64
+	weights     [][]float64
+	startIndex  int
+	activations []*activation
+}
+
+// worker represents a worker goroutine
+type worker struct {
+	jobChan <-chan job
+	wg      *sync.WaitGroup
+}
+
+// newWorker creates a new worker
+func newWorker(jobChan <-chan job, wg *sync.WaitGroup) *worker {
+	return &worker{
+		jobChan: jobChan,
+		wg:      wg,
+	}
+}
+
+// start starts the worker goroutine
+func (w *worker) start(art *FuzzyART) {
+	go func() {
+		for job := range w.jobChan {
+			// Process the job
+			for i, weights := range job.weights {
+				u := job.activations[job.startIndex+i]
+				u.j = job.startIndex + i
+				u.fiNorm = simd.FuzzyIntersectionSum(job.input, weights, u.fi)
+				u.wNorm = simd.SumFloat64(weights)
+				u.choice = u.fiNorm / (art.alpha + u.wNorm)
+			}
+			w.wg.Done()
+		}
+	}()
+}
+
 type FuzzyART struct {
 	workerPool chan struct{}
 	batchSize  int
@@ -127,33 +177,27 @@ func (m *FuzzyART) complementCode(a []float64) []float64 {
 //	return
 //}
 
-type activation struct {
-	// fuzzy intersection
-	fi []float64
-	// L1 norm of the fuzzy intersection
-	fiNorm float64
-	wNorm  float64
-	// activation value, choice function value
-	choice float64
-	// index of the category weights
-	j int
-}
-
 // activateCategories implements the recognition field functionality
 // by computing activation values for each category based on the input vector.
 // The sorting process also implicitly handles lateral inhibition by prioritizing
 // the category with the highest activation, thereby inhibiting others.
 func (m *FuzzyART) activateCategories(A []float64) {
-	activationsCh := make(chan []*activation, len(m.workerPool)*m.batchSize)
-	defer close(activationsCh)
-	go func() {
-		for activations := range activationsCh {
-			for _, a := range activations {
-				m.T[a.j] = a
-			}
+	categoryChoice := func(input []float64, W [][]float64, startIndex int) {
+		defer func() {
+			// release the worker
+			<-m.workerPool
 			m.wg.Done()
+		}()
+
+		for i, w := range W {
+			u := m.T[startIndex+i]
+			u.j = startIndex + i
+			//u.choice, u.fiNorm = m.categoryChoice(A, category, u.fi)
+			u.fiNorm = simd.FuzzyIntersectionSum(A, w, u.fi)
+			u.wNorm = simd.SumFloat64(w)
+			u.choice = u.fiNorm / (m.alpha + u.wNorm)
 		}
-	}()
+	}
 
 	for jStart := 0; jStart < len(m.W); jStart += m.batchSize {
 		jEnd := jStart + m.batchSize
@@ -166,24 +210,7 @@ func (m *FuzzyART) activateCategories(A []float64) {
 		m.workerPool <- struct{}{}
 
 		// spawn a goroutine to process a batch of categories
-		go func(input []float64, W [][]float64, startIndex int) {
-			defer func() {
-				// release the worker
-				<-m.workerPool
-			}()
-
-			activations := make([]*activation, len(W))
-			for i, w := range W {
-				u := m.T[startIndex+i]
-				u.j = startIndex + i
-				//u.choice, u.fiNorm = m.categoryChoice(A, category, u.fi)
-				u.fiNorm = simd.FuzzyIntersectionSum(A, w, u.fi)
-				u.wNorm = simd.SumFloat64(w)
-				u.choice = u.fiNorm / (m.alpha + u.wNorm)
-				activations[i] = u
-			}
-			activationsCh <- activations
-		}(A, m.W[jStart:jEnd], jStart)
+		go categoryChoice(A, m.W[jStart:jEnd], jStart)
 	}
 
 	m.wg.Wait()
