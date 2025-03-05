@@ -142,7 +142,6 @@ void avx512_top_k_activations(
 import "C"
 import (
 	"math"
-	"unsafe"
 
 	"golang.org/x/sys/cpu"
 )
