@@ -21,7 +21,7 @@ double accelerate_fuzzy_intersection_norm(const size_t n, double *A, double *w, 
     return intersection_norm;
 }
 
-double accelerate_sum_float64(const size_t n, double *arr) {
+double accelerate_sum(const size_t n, double *arr) {
     double sum = 0.0;
     vDSP_sveD(arr, 1, &sum, n);
 
@@ -52,7 +52,7 @@ func (p *accelerate) FuzzyIntersectionNorm(A, w []float64, fuzzyIntersectionOut 
 }
 
 func (p *accelerate) SumFloat64(arr []float64) float64 {
-	sum := C.accelerate_sum_float64(
+	sum := C.accelerate_sum(
 		(C.size_t)(len(arr)),
 		(*C.double)(&arr[0]),
 	)

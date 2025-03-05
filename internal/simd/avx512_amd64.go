@@ -62,7 +62,7 @@ double avx512_fuzzy_intersection_norm(const size_t n, double *A, double *w, doub
 }
 
 // Computes the sum of an array using AVX-512 with 2 chunks per iteration
-double avx512_sum_float64(const size_t n, double *arr)
+double avx512_sum(const size_t n, double *arr)
 {
     static const size_t single_size = 8; // 8 doubles per AVX-512 register
     static const size_t chunk_count = 2; // Process 2 chunks per iteration
@@ -93,50 +93,6 @@ double avx512_sum_float64(const size_t n, double *arr)
     }
 
     return sum;
-}
-
-// Find top k activations using a stream-based approach
-void avx512_top_k_activations(
-    const size_t n,
-    double *choices,
-    int *indices,
-    double *top_k_values,
-    int *top_k_indices,
-    const size_t k)
-{
-    // Initialize with invalid values
-    for (size_t i = 0; i < k; i++) {
-        top_k_values[i] = -INFINITY;
-        top_k_indices[i] = -1;
-    }
-
-    // Stream through all activations, maintaining top k
-    for (size_t i = 0; i < n; i++) {
-        double val = choices[i];
-        int idx = indices[i];
-
-        // Find insertion position based on value and tie-breaking
-        size_t pos = k;
-        for (size_t j = 0; j < k; j++) {
-            if (val > top_k_values[j] ||
-                (val == top_k_values[j] && idx < top_k_indices[j])) {
-                pos = j;
-                break;
-            }
-        }
-
-        // If an insertion position was found, shift and insert
-        if (pos < k) {
-            // Shift elements down
-            for (size_t j = k-1; j > pos; j--) {
-                top_k_values[j] = top_k_values[j-1];
-                top_k_indices[j] = top_k_indices[j-1];
-            }
-            // Insert the new value
-            top_k_values[pos] = val;
-            top_k_indices[pos] = idx;
-        }
-    }
 }
 */
 import "C"
@@ -174,7 +130,7 @@ func (p *avx512) SumFloat64(arr []float64) float64 {
 	size := len(arr)
 	alignedSize := align64(size)
 
-	sum := C.avx512_sum_float64(
+	sum := C.avx512_sum(
 		(C.size_t)(alignedSize),
 		(*C.double)(&arr[0]),
 	)
