@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestFuzzyIntersectionSum(t *testing.T) {
+func TestFuzzyIntersectionNorm(t *testing.T) {
 	for _, size := range []int{7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 256} {
 		t.Run("size="+strconv.Itoa(size), func(t *testing.T) {
 			a := make([]float64, size)
@@ -20,31 +20,34 @@ func TestFuzzyIntersectionSum(t *testing.T) {
 				w[i] = rand.Float64() * 10
 
 				// Expected intersection and sum
-				min := math.Min(a[i], w[i])
-				expectedSum += min
+				minimum := math.Min(a[i], w[i])
+				expectedSum += minimum
 				intersection[i] = 0 // Initialize to 0 for proper comparison later
 			}
 
 			// Call our optimized function
-			resultSum := FuzzyIntersectionSum(a, w, intersection)
+			fiNorm, _ := FuzzyIntersectionNorm(a, w, intersection)
 
 			// Verify sum
-			if math.Abs(expectedSum-resultSum) > 1e-10 {
-				t.Errorf("FuzzyIntersectionSum should return sum %.10f, but got %.10f", expectedSum, resultSum)
+			if math.Abs(expectedSum-fiNorm) > 1e-10 {
+				t.Errorf("FuzzyIntersectionSum should return sum %.10f, but got %.10f",
+					expectedSum, fiNorm)
 			}
 
 			// Verify intersection values
 			for i := 0; i < size; i++ {
 				expected := math.Min(a[i], w[i])
 				if math.Abs(expected-intersection[i]) > 1e-10 {
-					t.Errorf("FuzzyIntersection at index %d should be %.10f, but got %.10f", i, expected, intersection[i])
+					t.Errorf("FuzzyIntersection at index %d should be %.10f, but got %.10f",
+						i, expected, intersection[i])
 				}
 			}
 
 			// Test with nil intersection_out
-			resultSum2 := FuzzyIntersectionSum(a, w, nil)
-			if math.Abs(expectedSum-resultSum2) > 1e-10 {
-				t.Errorf("FuzzyIntersectionSum with nil output should return sum %.10f, but got %.10f", expectedSum, resultSum2)
+			fiNorm2, _ := FuzzyIntersectionNorm(a, w, nil)
+			if math.Abs(expectedSum-fiNorm2) > 1e-10 {
+				t.Errorf("FuzzyIntersectionSum with nil output should return sum %.10f, but got %.10f",
+					expectedSum, fiNorm2)
 			}
 		})
 	}
@@ -88,7 +91,7 @@ func BenchmarkFuzzyIntersectionSum(b *testing.B) {
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				FuzzyIntersectionSum(a, w, intersection)
+				FuzzyIntersectionNorm(a, w, intersection)
 			}
 		})
 	}

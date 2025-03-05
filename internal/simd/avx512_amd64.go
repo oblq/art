@@ -150,11 +150,6 @@ import (
 // avx2 implements Provider with AVX2 instructions
 type avx512 struct{}
 
-// Override the factory function
-func newAVX512Provider() Provider {
-	return new(avx512)
-}
-
 // FuzzyIntersectionNorm computes elementwise min between A and w and returns the sum
 // If intersection_out is not nil, it also stores the intersection result
 func (p *avx512) FuzzyIntersectionNorm(A, w []float64, fuzzyIntersectionOut []float64) (float64, float64) {
@@ -186,42 +181,6 @@ func (p *avx512) SumFloat64(arr []float64) float64 {
 	)
 
 	return float64(sum)
-}
-
-// TopKActivations finds the top k activations and their indices
-// Returns two slices: values and their corresponding indices
-func (p *avx512) TopKActivations(choices []float64, indices []int, k int) ([]float64, []int) {
-	n := len(choices)
-	if n == 0 || k <= 0 {
-		return []float64{}, []int{}
-	}
-
-	// Ensure k doesn't exceed array length
-	if k > n {
-		k = n
-	}
-
-	// Prepare output arrays
-	topValues := make([]float64, k)
-	topIndices := make([]int, k)
-
-	// Convert Go slices to C arrays
-	choicesPtr := (*C.double)(unsafe.Pointer(&choices[0]))
-	indicesPtr := (*C.int)(unsafe.Pointer(&indices[0]))
-	topValuesPtr := (*C.double)(unsafe.Pointer(&topValues[0]))
-	topIndicesPtr := (*C.int)(unsafe.Pointer(&topIndices[0]))
-
-	// Call C function
-	C.avx512_top_k_activations(
-		C.size_t(n),
-		choicesPtr,
-		indicesPtr,
-		topValuesPtr,
-		topIndicesPtr,
-		C.size_t(k),
-	)
-
-	return topValues, topIndices
 }
 
 // align64 rounds up size to the nearest multiple of 8 (AVX-512 register can hold 8 doubles)

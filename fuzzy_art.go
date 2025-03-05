@@ -2,6 +2,7 @@ package art
 
 import (
 	"fmt"
+	"math"
 	"runtime"
 	"sync"
 
@@ -19,43 +20,6 @@ type activation struct {
 	choice float64
 	// index of the category weights
 	j int
-}
-
-type job struct {
-	input       []float64
-	weights     [][]float64
-	startIndex  int
-	activations []*activation
-}
-
-// worker represents a worker goroutine
-type worker struct {
-	jobChan <-chan job
-	wg      *sync.WaitGroup
-}
-
-// newWorker creates a new worker
-func newWorker(jobChan <-chan job, wg *sync.WaitGroup) *worker {
-	return &worker{
-		jobChan: jobChan,
-		wg:      wg,
-	}
-}
-
-// start starts the worker goroutine
-func (w *worker) start(art *FuzzyART) {
-	go func() {
-		for job := range w.jobChan {
-			// Process the job
-			for i, weights := range job.weights {
-				u := job.activations[job.startIndex+i]
-				u.j = job.startIndex + i
-				u.fiNorm, u.wNorm = simd.FuzzyIntersectionNorm(job.input, weights, u.fi)
-				u.choice = u.fiNorm / (art.alpha + u.wNorm)
-			}
-			w.wg.Done()
-		}
-	}()
 }
 
 type FuzzyART struct {
@@ -159,7 +123,6 @@ func (m *FuzzyART) ActivateCategories(A []float64) {
 		for i, w := range W {
 			u := m.T[startIndex+i]
 			u.j = startIndex + i
-			//u.choice, u.fiNorm = m.categoryChoice(A, category, u.fi)
 			u.fiNorm, u.wNorm = simd.FuzzyIntersectionNorm(A, w, u.fi)
 			u.choice = u.fiNorm / (m.alpha + u.wNorm)
 		}
@@ -205,15 +168,14 @@ func (m *FuzzyART) sortCategoriesByActivation() {
 	sorty.Sort(len(m.T), lsw)
 }
 
-// matchCriterion computes the matchCriterion function.
-// The matchCriterion function calculates the resonance between the input vector and a category.
+// resonance calculates the resonance between the input vector and a category.
 // The resonance is the ratio of the fuzzy intersection L1 norm to the input vector L1 norm.
-func (m *FuzzyART) matchCriterion(fiNorm, aNorm float64) float64 {
+func (m *FuzzyART) resonance(fiNorm, aNorm float64) float64 {
 	if fiNorm == 0 && aNorm == 0 {
 		return 1
-	} else {
-		return fiNorm / aNorm
 	}
+
+	return fiNorm / aNorm
 }
 
 // extendClusterActivation initializes or expands
@@ -237,20 +199,24 @@ func (m *FuzzyART) extendClusterActivation() {
 	}
 }
 
+func (m *FuzzyART) AppendNewCategory(A []float64) int {
+	m.W = append(m.W, A)
+	m.extendClusterActivation()
+	return len(m.W) - 1
+}
+
 // resonateOrReset implements the resonance or reset logic.
 // If the best matching category passes the vigilance test (>= rho),
 // its weights are updated to move closer to the input vector, facilitating learning.
 // If it fails, the category is inhibited (temporarily ignored), and the next best category is tested,
 // continuing until a suitable category is found or all are exhausted
 // in which case a new category is created.
-func (m *FuzzyART) resonateOrReset(
-	A []float64,
-) (resonance float64, categoryIndex int) {
-	//aNorm := m.l1Norm(A)
-	//aNorm := simd.SumFloat64(A)
+func (m *FuzzyART) resonateOrReset(A []float64) (maxResonance float64, categoryIndex int) {
+	aNorm := simd.SumFloat64(A)
 
 	for _, t := range m.T {
-		resonance = m.matchCriterion(t.fiNorm, float64(m.M))
+		resonance := m.resonance(t.fiNorm, aNorm)
+		maxResonance = math.Max(maxResonance, resonance)
 		if resonance >= m.rho {
 			newW := make([]float64, len(A))
 			for k := range newW {
@@ -264,9 +230,8 @@ func (m *FuzzyART) resonateOrReset(
 
 	// If no category meets the vigilance criterion, create a new category.
 	// Fast commitment option, directly copy the input vector as the new category.
-	m.W = append(m.W, A)
-	m.extendClusterActivation()
-	return resonance, len(m.W) - 1
+	categoryIndex = m.AppendNewCategory(A)
+	return
 }
 
 // Fit implements the complete ART learning cycle.
@@ -283,8 +248,8 @@ func (m *FuzzyART) Predict(a []float64, learn bool) (resonance float64, category
 	A := m.ComplementCode(a)
 	m.ActivateCategories(A)
 	if !learn {
-		//aNorm := simd.SumFloat64(A)
-		resonance = m.matchCriterion(m.T[0].fiNorm, float64(m.M))
+		aNorm := simd.SumFloat64(A)
+		resonance = m.resonance(m.T[0].fiNorm, aNorm)
 		return resonance, m.T[0].j
 	}
 
