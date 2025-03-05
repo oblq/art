@@ -50,8 +50,7 @@ func (w *worker) start(art *FuzzyART) {
 			for i, weights := range job.weights {
 				u := job.activations[job.startIndex+i]
 				u.j = job.startIndex + i
-				u.fiNorm = simd.FuzzyIntersectionSum(job.input, weights, u.fi)
-				u.wNorm = simd.SumFloat64(weights)
+				u.fiNorm, u.wNorm = simd.FuzzyIntersectionNorm(job.input, weights, u.fi)
 				u.choice = u.fiNorm / (art.alpha + u.wNorm)
 			}
 			w.wg.Done()
@@ -127,12 +126,12 @@ func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*Fuzzy
 	}, nil
 }
 
-// complementCode creates complement-coded representation of input vector.
+// ComplementCode creates complement-coded representation of input vector.
 // Complement coding is a common preprocessing step in ART models
 // to prevent the "category proliferation problem."
 // Complement coding achieve normalization while preserving amplitude information.
 // Inputs preprocessed in complement coding are automatically normalized.
-func (m *FuzzyART) complementCode(a []float64) []float64 {
+func (m *FuzzyART) ComplementCode(a []float64) []float64 {
 	// Create a new slice with double the length of the input slice
 	A := make([]float64, len(a)*2)
 	for i, v := range a {
@@ -145,43 +144,11 @@ func (m *FuzzyART) complementCode(a []float64) []float64 {
 	return A
 }
 
-//// fuzzyIntersection populates the passed fuzzyIntersection arg with
-//// the element-wise min of the two input slices.
-//// Is the fuzzy `AND` operator.
-//// Measures the overlap between the input vector and the prototype vector.
-//// The fuzzy intersection slice is passed by reference to avoid unnecessary memory allocations.
-//func (m *FuzzyART) fuzzyIntersection(A, W, fuzzyIntersection []float64) {
-//	for i := range A {
-//		fuzzyIntersection[i] = math.Min(A[i], W[i])
-//	}
-//}
-//
-//// l1Norm calculates the L1 norm (Manhattan distance) of a given slice of floats.
-//// Summing the components of the fuzzy intersection gives a measure of similarity
-//// that is analogous to an L1 norm in the context of complement-coded vectors.
-//func (m *FuzzyART) l1Norm(arr []float64) (norm float64) {
-//	for _, v := range arr {
-//		norm += v
-//	}
-//
-//	return
-//}
-//
-//// categoryChoice calculates the activation of a category based on the input vector.
-//// The fuzzyIntersection slice is passed by reference to avoid unnecessary memory allocations.
-//func (m *FuzzyART) categoryChoice(A, W, fuzzyIntersection []float64) (choice, fiNorm, wNorm float64) {
-//	m.fuzzyIntersection(A, W, fuzzyIntersection)
-//	fiNorm = m.l1Norm(fuzzyIntersection)
-//	wNorm = m.l1Norm(W)
-//	choice = fiNorm / (m.alpha + wNorm)
-//	return
-//}
-
-// activateCategories implements the recognition field functionality
+// ActivateCategories implements the recognition field functionality
 // by computing activation values for each category based on the input vector.
 // The sorting process also implicitly handles lateral inhibition by prioritizing
 // the category with the highest activation, thereby inhibiting others.
-func (m *FuzzyART) activateCategories(A []float64) {
+func (m *FuzzyART) ActivateCategories(A []float64) {
 	categoryChoice := func(input []float64, W [][]float64, startIndex int) {
 		defer func() {
 			// release the worker
@@ -193,8 +160,7 @@ func (m *FuzzyART) activateCategories(A []float64) {
 			u := m.T[startIndex+i]
 			u.j = startIndex + i
 			//u.choice, u.fiNorm = m.categoryChoice(A, category, u.fi)
-			u.fiNorm = simd.FuzzyIntersectionSum(A, w, u.fi)
-			u.wNorm = simd.SumFloat64(w)
+			u.fiNorm, u.wNorm = simd.FuzzyIntersectionNorm(A, w, u.fi)
 			u.choice = u.fiNorm / (m.alpha + u.wNorm)
 		}
 	}
@@ -214,24 +180,10 @@ func (m *FuzzyART) activateCategories(A []float64) {
 	}
 
 	m.wg.Wait()
+	m.sortCategoriesByActivation()
+}
 
-	// Sort category indices by activation values in descending order
-	//slices.SortFunc(m.T, func(a, b *activation) int {
-	//	// In case of equal activation values, sort by category index,
-	//	// because older categories must have the priority.
-	//	if a.choice == b.choice {
-	//		if a.j < b.j {
-	//			return -1
-	//		} else {
-	//			return 1
-	//		}
-	//	}
-	//	if a.choice > b.choice {
-	//		return -1
-	//	}
-	//	return 1
-	//})
-
+func (m *FuzzyART) sortCategoriesByActivation() {
 	lsw := func(i, k, r, s int) bool {
 		if m.T[i].choice == m.T[k].choice { // strict comparator like < or >
 			if m.T[i].j < m.T[k].j { // strict comparator like < or >
@@ -319,8 +271,8 @@ func (m *FuzzyART) resonateOrReset(
 
 // Fit implements the complete ART learning cycle.
 func (m *FuzzyART) Fit(a []float64) (resonance float64, categoryIndex int) {
-	A := m.complementCode(a)
-	m.activateCategories(A)
+	A := m.ComplementCode(a)
+	m.ActivateCategories(A)
 	return m.resonateOrReset(A)
 }
 
@@ -328,8 +280,8 @@ func (m *FuzzyART) Fit(a []float64) (resonance float64, categoryIndex int) {
 // It returns the weight vector of the best matching category and its index.
 // If learn is true, it updates the weights of the matching category.
 func (m *FuzzyART) Predict(a []float64, learn bool) (resonance float64, categoryIndex int) {
-	A := m.complementCode(a)
-	m.activateCategories(A)
+	A := m.ComplementCode(a)
+	m.ActivateCategories(A)
 	if !learn {
 		//aNorm := simd.SumFloat64(A)
 		resonance = m.matchCriterion(m.T[0].fiNorm, float64(m.M))

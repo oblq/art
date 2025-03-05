@@ -83,10 +83,7 @@ func (am *DefaultARTMAP2) choiceFunction(A []float64) []Activation {
 
 	for j := 0; j < len(am.w); j++ {
 		// Use cross-platform optimized SIMD function
-		fuzzyIntersectionSum := simd.FuzzyIntersectionSum(A, am.w[j], fuzzyIntersection)
-
-		// Use cross-platform optimized SIMD function
-		wSum := simd.SumFloat64(am.w[j])
+		fuzzyIntersectionSum, wSum := simd.FuzzyIntersectionNorm(A, am.w[j], fuzzyIntersection)
 
 		activationVal := fuzzyIntersectionSum + (1-am.Alpha)*(float64(am.M)-wSum)
 		if activationVal < activationThreshold {

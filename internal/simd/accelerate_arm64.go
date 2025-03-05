@@ -7,15 +7,18 @@ package simd
 #cgo LDFLAGS: -framework Accelerate
 #include <Accelerate/Accelerate.h>
 
-double accelerate_fuzzy_intersection_float64(const size_t n, double *A, double *w, double *intersection_out) {
+double accelerate_fuzzy_intersection_norm(const size_t n, double *A, double *w, double *fuzzy_intersection_out, double *w_norm_out) {
     // Compute min(A[i], w[i])
-    vDSP_vminD(A, 1, w, 1, intersection_out, 1, n);
+    vDSP_vminD(A, 1, w, 1, fuzzy_intersection_out, 1, n);
 
     // Sum the min values
-    double sum = 0.0;
-    vDSP_sveD(intersection_out, 1, &sum, n);
+    double intersection_norm = 0.0;
+    vDSP_sveD(fuzzy_intersection_out, 1, &intersection_norm, n);
 
-    return sum;
+    // Sum the w values directly into w_sum_out
+    vDSP_sveD(w, 1, w_norm_out, n);
+
+    return intersection_norm;
 }
 
 double accelerate_sum_float64(const size_t n, double *arr) {
@@ -36,16 +39,17 @@ func GetProvider() Provider {
 	return new(accelerate)
 }
 
-func (p *accelerate) FuzzyIntersectionSum(A, w []float64, intersection_out []float64) float64 {
-	var intersectionPtr = (*C.double)(&intersection_out[0])
-	sum := C.accelerate_fuzzy_intersection_float64(
+func (p *accelerate) FuzzyIntersectionNorm(A, w []float64, fuzzyIntersectionOut []float64) (float64, float64) {
+	var wNormOut C.double
+	fiNormOut = C.accelerate_fuzzy_intersection_norm(
 		(C.size_t)(len(A)),
 		(*C.double)(&A[0]),
 		(*C.double)(&w[0]),
-		intersectionPtr,
+		(*C.double)(&fuzzyIntersectionOut[0]),
+		&wNormOut,
 	)
 
-	return float64(sum)
+	return float64(fiNormOut), float64(wNormOut)
 }
 
 func (p *accelerate) SumFloat64(arr []float64) float64 {
