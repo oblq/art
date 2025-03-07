@@ -72,8 +72,8 @@ Existing Python implementations of Fuzzy ART require significant time to complet
 
 More than 4 hours are necessary to complete a training session on the full MNIST dataset, even in single thread this code takes an hour less, in parallel _**completes the training in 16 minutes on a MacBook Pro M1 Pro and in less than 9 minutes on a 48-thread Xeon W-3265M.**_
 
-MacBook Pro M1 Pro: 10 cores, 16 threads, 16GB RAM:
-![](./resources/MacbookPro_M1_Pro.png)
+Xeon-W-3265M on Linux with avx-512 acceleration:  
+![](./resources/Xeon-W-3265M-AVX-512.png)
 
 ## Performance Optimization
 This implementation utilizes:
