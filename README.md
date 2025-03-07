@@ -1,14 +1,25 @@
 # Fuzzy ART
 
-This repository contains a fast implementation of the Fuzzy ART algorithm, part of the Adaptive Resonance Theory (ART) algorithms family developed by Stephen Grossberg and Gail Carpenter.
-
-Depending on your CPU, this code **can be 15 to 30 times faster than existing Python implementations**.
+A high-performance implementation of the Fuzzy Adaptive Resonance Theory (ART) algorithm with hardware acceleration support.
 
 ## Features
-- **Unsupervised Learning**: Efficient learning with a single pass.
-- **Explainable Results**: Clear and interpretable outcomes.
-- **Stable Online Learning**: Incremental learning without the need to retrain from scratch, allowing simultaneous learning and inference.
-- **No Catastrophic Forgetting**: Maintains previously learned information.
+
+- **Unsupervised Learning**: Efficiently learns patterns with a single data pass
+- **Online Learning**: Enables simultaneous learning and inference without retraining
+- **Stability/Plasticity**: Preserves previously learned information (no catastrophic forgetting)
+
+## Performance
+
+- **Hardware-Accelerated Computation**: Automatically detects and uses the fastest available SIMD instructions
+  - **Apple Silicon**: Leverages the Accelerate framework on macOS/ARM64 platforms (M1/M2/M3 chips)
+  - **x86 Processors**: Utilizes AVX-512 instructions on compatible CPUs
+  - **Fallback Support**: Provides optimized generic implementation for all other systems
+- **Parallel Processing**: Multi-threaded implementation scales with available CPU cores (using a fixed-size worker-pool)
+  - Category activation calculations
+  - Fuzzy intersection computation
+- **Memory Efficiency**: Reuses pre-allocated resources to minimize garbage collection overhead
+
+Training on the full MNIST dataset completes in 5-6 minutes on Apple M1 Pro / Xeon W-3265M. 
 
 ## Installation
 
@@ -16,74 +27,64 @@ Depending on your CPU, this code **can be 15 to 30 times faster than existing Py
 go get -u github.com/oblq/art
 ```
 
-## Usage
+## Basic Usage
 
 ```go
 package main
 
 import (
-    "fmt"
-    "github.com/oblq/art"
+	"fmt"
+
+	"github.com/oblq/art"
 )
 
 func main() {
-	// Create a new Fuzzy ART model
-	model := art.NewFuzzyART(5, 0.9, 0.00000001, 1)
+	// Create a new Fuzzy ART model with:
+	// - 5 input features
+	// - 0.9 vigilance parameter (controls category granularity)
+	// - 0.01 choice parameter (influences category competition)
+	// - 1.0 learning rate (controls weight update speed)
+	model := art.NewFuzzyART(5, 0.9, 0.01, 1)
+	defer model.Close() // Release resources when done
 
-	// Prepare an input sample
+	// Prepare an input sample (values should be normalized between 0-1)
 	input := []float64{0.1, 0.2, 0.3, 0.4, 0.5}
-	
-	// Train the model with a sample
-	category, categoryIndex := model.Train(input)
 
-	// Test the model with a sample
-	inferredCategory, inferredCategoryIndex := model.Infer(input, false)
+	// Train the model with the sample
+	_, categoryIndex := model.Fit(input)
 
-	fmt.Printf("Matched: %t\n", categoryIndex == inferredCategoryIndex)
+	// Test the model (with learning disabled)
+	resonance, predictedCategoryIndex := model.Predict(input, false)
+
+	fmt.Printf("Matched: %t (Category: %d, Resonance: %.4f)\n",
+		categoryIndex == predictedCategoryIndex,
+		predictedCategoryIndex,
+		resonance)
 }
 ```
 
-## Run the example
+## MNIST Example
 
-If you cloned the project you can run the included example.
+The repository includes a full example using the MNIST dataset.
 
-### Download MNIST Dataset
-Run the following makefile target to download the MNIST dataset:
+### Downloading the Dataset
+
 ```bash
 make get-mnist
 ```
-This will place the training and test sets in the `example` folder.
 
-### Configure Training
-Open the `example/main.go` file and edit the following constants to test a subset of the dataset or leave them as `-1` to run the complete dataset:
-```go
-TRAIN_SAMPLES_PER_DIGIT = -1
-TEST_SAMPLES_PER_DIGIT = -1
-```
+This command downloads the MNIST training and test sets to the `testdata` directory.
 
-### Run Example
-Execute the following command to start the training and test processes:
+### Running the Example
+
 ```bash
-make run-example
+make run
 ```
 
-## Why Go?
-Existing Python implementations of Fuzzy ART require significant time to complete training sessions on large datasets.
+This trains and tests the Fuzzy ART model on the MNIST dataset, automatically using the optimal hardware acceleration for your system.
 
-More than 4 hours are necessary to complete a training session on the full MNIST dataset, even in single thread this code takes an hour less, in parallel _**completes the training in 16 minutes on a MacBook Pro M1 Pro and in less than 9 minutes on a 48-thread Xeon W-3265M.**_
+## About Adaptive Resonance Theory
 
-Xeon-W-3265M on Linux with avx-512 acceleration:  
-![](./resources/Xeon-W-3265M-AVX-512.png)
+Adaptive Resonance Theory (ART) is a cognitive and neural theory developed by Stephen Grossberg and Gail Carpenter that explains how the brain autonomously learns to categorize, recognize, and predict objects and events in a changing environment.
 
-## Performance Optimization
-This implementation utilizes:
-- A worker pool sized to the number of available threads for parallelizing training and inference.
-- Pre-allocated slices that are rotated and reused at every iteration.
-
-Further optimizations may be possible. Detailed profiling of the code is planned for future enhancements, but current results are satisfactory.
-
-## Adaptive Resonance Theory (ART)
-
-Adaptive Resonance Theory, or ART, is a cognitive and neural theory of how the brain autonomously learns to categorize, recognize, and predict objects and events in a changing world pioneered by Stephen Grossberg and Gail Carpenter.
-
-You can read all about it in this paper [here](https://www.semanticscholar.org/paper/Adaptive-Resonance-Theory%3A-How-a-brain-learns-to-a-Grossberg/71bc18bcafe1f4909a97b0b17a522dffe306ee6a?p2df).
+For a comprehensive overview, refer to [this research paper](https://www.semanticscholar.org/paper/Adaptive-Resonance-Theory%3A-How-a-brain-learns-to-a-Grossberg/71bc18bcafe1f4909a97b0b17a522dffe306ee6a).
