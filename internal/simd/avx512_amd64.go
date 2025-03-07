@@ -1,6 +1,10 @@
 //go:build amd64
 
-package avx512
+package simd
+
+import (
+	"golang.org/x/sys/cpu"
+)
 
 /*
 #cgo CFLAGS: -mavx512f -mavx512dq -mavx512vl -O3 -fPIC
@@ -142,6 +146,19 @@ import (
 )
 
 type AVX512 struct{}
+
+func hasAVX512() bool {
+	return cpu.X86.HasAVX512 &&
+		cpu.X86.HasAVX512F &&
+		cpu.X86.HasAVX512DQ
+}
+
+func GetProvider() Provider {
+	if hasAVX512() {
+		return new(AVX512)
+	}
+	return nil
+}
 
 // FuzzyIntersectionNorm computes elementwise min between A and w and returns the sum
 // If intersection_out is not nil, it also stores the intersection result

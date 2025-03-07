@@ -1,6 +1,6 @@
 //go:build darwin && arm64
 
-package accelerate
+package simd
 
 import "unsafe"
 
@@ -50,6 +50,11 @@ import "C"
 
 // Accelerate implements Provider with Apple's Accelerate framework
 type Accelerate struct{}
+
+func GetProvider() Provider {
+	// todo: check if available
+	return new(Accelerate)
+}
 
 func (p *Accelerate) FuzzyIntersectionNorm(A, w []float64, fuzzyIntersectionOut []float64) (float64, float64) {
 	var wNormOut C.double
