@@ -15,7 +15,8 @@ type fuzzyActivation struct {
 	fi []float64
 	// L1 norm of the fuzzy intersection
 	fiNorm float64
-	wNorm  float64
+	// L1 norm of the relative category weights
+	wNorm float64
 	// activation value, choice function value
 	activation float64
 	// index of the category weights
@@ -28,7 +29,7 @@ type FuzzyART struct {
 	wg         sync.WaitGroup
 
 	// Vigilance parameter - controls category granularity
-	// Recommended value: 0.8
+	// Recommended value: 0.86
 	// Range: 0.0 to 1.0
 	// Typical Values: 0.5 to 0.9
 	// Purpose: Determines the strictness of category matching. Higher values mean stricter matching criteria.
@@ -40,11 +41,13 @@ type FuzzyART struct {
 	// Choice parameter - influences category competition
 	// Recommended value: 0.01
 	// Range: > 0.0
-	// Typical Values: 0.0001 to 0.1
-	// Purpose: Influences the fuzzyActivation function, affecting the competition among categories.
+	// Typical Values: 0.0001 to 10
+	// Purpose: Influences the activation function, affecting the competition among categories.
 	// Adjustment:
-	// Higher alpha values generates lower categories competition (creates fewer).
-	// Lower alpha values (closer to 0) higher categories competition (creates more).
+	// Higher alpha values makes the choice more dependent on the match between input and weight
+	// instead of considering the size of the input vector,
+	// tend to favor the selection of existing categories over creating new ones.
+	// Lower alpha values bias toward selecting categories with larger weight vectors.
 	alpha float64
 
 	// Learning rate - controls weight update speed
@@ -63,6 +66,10 @@ type FuzzyART struct {
 
 	// W is the weight matrix - stores category prototypes
 	W [][]float64
+
+	// T is the activation list - stores category activations
+	// This is an internal variable used for internal calculations
+	// and should not be manipulated externally.
 	T []*fuzzyActivation
 }
 
@@ -96,12 +103,9 @@ func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*Fuzzy
 // Complement coding achieve normalization while preserving amplitude information.
 // Inputs preprocessed in complement coding are automatically normalized.
 func (f *FuzzyART) complementCode(a []float64) []float64 {
-	// Create a new slice with double the length of the input slice
 	A := make([]float64, len(a)*2)
 	for i, v := range a {
-		// Copy the original value to the first half of the new slice
 		A[i] = v
-		// Calculate and store the complement (1 - X[i]) in the second half of the new slice
 		A[i+len(a)] = 1 - v
 	}
 
@@ -147,7 +151,6 @@ func (f *FuzzyART) activateCategories(A []float64) {
 }
 
 func (f *FuzzyART) sortCategoriesByActivation() {
-	// Sort category val values indices by val values in descending order
 	slices.SortFunc(f.T, func(a, b *fuzzyActivation) int {
 		// In case of equal activation values, sort by category index,
 		// because older categories must have the priority.
@@ -205,7 +208,8 @@ func (f *FuzzyART) appendNewCategory(A []float64) int {
 // resonateOrReset implements the resonance or reset logic.
 // If the best matching category passes the vigilance test (>= rho),
 // its weights are updated to move closer to the input vector, facilitating learning.
-// If it fails, the category is inhibited (temporarily ignored), and the next best category is tested,
+// If it fails, the category is inhibited (temporarily ignored),
+// and the next best category is tested,
 // continuing until a suitable category is found or all are exhausted
 // in which case a new category is created.
 func (f *FuzzyART) resonateOrReset(A []float64) (maxResonance float64, categoryIndex int) {
@@ -234,8 +238,8 @@ func (f *FuzzyART) Fit(a []float64) (resonance float64, categoryIndex int) {
 }
 
 // Predict implements the recognition process with optional learning.
-// It returns the weight vector of the best matching category and its index.
-// If learn is true, it updates the weights of the matching category.
+// It returns the resonance value and the index of the best matching category.
+// If learn is true, it also updates the weights of the matching category.
 func (f *FuzzyART) Predict(a []float64, learn bool) (resonance float64, categoryIndex int) {
 	A := f.complementCode(a)
 	f.activateCategories(A)
