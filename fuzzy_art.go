@@ -178,30 +178,11 @@ func (f *FuzzyART) resonance(fiNorm, aNorm float64) float64 {
 	return fiNorm / aNorm
 }
 
-// extendClusterActivation initializes or expands
-// the T slice to accommodate all weights in W.
-func (f *FuzzyART) extendClusterActivation() {
-	if len(f.T) < len(f.W) {
-		// Keep existing activations but ensure T is at least as long as W
-		if len(f.T) < len(f.W) {
-			// Create a new slice with capacity for all weights
-			newT := make([]*fuzzyActivation, len(f.W))
-			// Copy existing fuzzyActivation instances
-			copy(newT, f.T)
-			// initialize the new fuzzyActivation
-			lastIndex := len(f.T)
-			newT[lastIndex] = &fuzzyActivation{
-				fi: make([]float64, len(f.W[0])),
-			}
-			// Update T with the new slice
-			f.T = newT
-		}
-	}
-}
-
 func (f *FuzzyART) appendNewCategory(A []float64) int {
 	f.W = append(f.W, A)
-	f.extendClusterActivation()
+	f.T = append(f.T, &fuzzyActivation{
+		fi: make([]float64, len(f.W[0])),
+	})
 	return len(f.W) - 1
 }
 
@@ -217,11 +198,11 @@ func (f *FuzzyART) resonateOrReset(A []float64) (maxResonance float64, categoryI
 
 	for _, t := range f.T {
 		resonance := f.resonance(t.fiNorm, aNorm)
-		maxResonance = math.Max(maxResonance, resonance)
 		if resonance >= f.rho {
 			simd.Shared.UpdateFuzzyWeights(f.W[t.j], t.fi, f.beta)
 			return resonance, t.j
 		}
+		maxResonance = math.Max(maxResonance, resonance)
 	}
 
 	// If no category meets the vigilance criterion, create a new category.
