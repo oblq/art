@@ -117,14 +117,14 @@ func (f *FuzzyART) complementCode(a []float64) []float64 {
 // The sorting process also implicitly handles lateral inhibition by prioritizing
 // the category with the highest activation, thereby inhibiting others.
 func (f *FuzzyART) activateCategories(A []float64) {
-	categoryChoice := func(input []float64, W [][]float64, startIndex int) {
+	categoryChoice := func(startIndex, endIndex int) {
 		defer func() {
 			// release the worker
 			<-f.workerPool
 			f.wg.Done()
 		}()
 
-		for i, w := range W {
+		for i, w := range f.W[startIndex:endIndex] {
 			u := f.T[startIndex+i]
 			u.j = startIndex + i
 			u.fiNorm, u.wNorm = simd.Shared.FuzzyIntersectionNorm(A, w, u.fi)
@@ -143,7 +143,7 @@ func (f *FuzzyART) activateCategories(A []float64) {
 		f.workerPool <- struct{}{}
 
 		// spawn a goroutine to process a batch of categories
-		go categoryChoice(A, f.W[jStart:jEnd], jStart)
+		go categoryChoice(jStart, jEnd)
 	}
 
 	f.wg.Wait()
