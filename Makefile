@@ -5,4 +5,4 @@ get-mnist:
 
 run:
 	@go mod tidy
-	@cd example/fuzzy_art && go run .
+	@cd example && go run .
