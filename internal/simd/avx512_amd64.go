@@ -3,6 +3,9 @@
 package simd
 
 import (
+	"math"
+	"unsafe"
+
 	"golang.org/x/sys/cpu"
 )
 
@@ -140,10 +143,6 @@ void update_fuzzy_weights(double* weights, const double* fi, double beta, int le
 
 */
 import "C"
-import (
-	"math"
-	"unsafe"
-)
 
 type AVX512 struct{}
 
