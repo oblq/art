@@ -61,16 +61,14 @@ type FuzzyART struct {
 	// Decrease beta for more stable learning, which can be beneficial for more stable environments.
 	beta float64
 
-	// M is the number of features of the input
+	// M is the number of features of the input, its dimensionality.
 	M int
 
 	// W is the weight matrix - stores category prototypes
 	W [][]float64
 
-	// T is the activation list - stores category activations
-	// This is an internal variable used for internal calculations
-	// and should not be manipulated externally.
-	T []*fuzzyActivation
+	// t is the activation list - stores category activations
+	t []*fuzzyActivation
 }
 
 func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*FuzzyART, error) {
@@ -93,7 +91,7 @@ func NewFuzzyART(inputLen int, rho float64, alpha float64, beta float64) (*Fuzzy
 		beta:       beta,
 		M:          inputLen,
 		W:          make([][]float64, 0),
-		T:          make([]*fuzzyActivation, 0),
+		t:          make([]*fuzzyActivation, 0),
 	}, nil
 }
 
@@ -125,10 +123,10 @@ func (f *FuzzyART) activateCategories(A []float64) {
 		}()
 
 		for i, w := range f.W[startIndex:endIndex] {
-			u := f.T[startIndex+i]
-			u.j = startIndex + i
-			u.fiNorm, u.wNorm = simd.Shared.FuzzyIntersectionNorm(A, w, u.fi)
-			u.activation = u.fiNorm / (f.alpha + u.wNorm)
+			t := f.t[startIndex+i]
+			t.j = startIndex + i
+			t.fiNorm, t.wNorm = simd.Shared.FuzzyIntersectionNorm(A, w, t.fi)
+			t.activation = t.fiNorm / (f.alpha + t.wNorm)
 		}
 	}
 
@@ -151,7 +149,7 @@ func (f *FuzzyART) activateCategories(A []float64) {
 }
 
 func (f *FuzzyART) sortCategoriesByActivation() {
-	slices.SortFunc(f.T, func(a, b *fuzzyActivation) int {
+	slices.SortFunc(f.t, func(a, b *fuzzyActivation) int {
 		// In case of equal activation values, sort by category index,
 		// because older categories must have the priority.
 		if a.activation == b.activation {
@@ -168,9 +166,8 @@ func (f *FuzzyART) sortCategoriesByActivation() {
 	})
 }
 
-// resonance calculates the resonance between the input vector and a category.
-// The resonance is the ratio of the fuzzy intersection L1 norm to the input vector L1 norm.
-func (f *FuzzyART) resonance(fiNorm, aNorm float64) float64 {
+// normalizedActivation returns the ratio of the fuzzy intersection L1 norm to the input vector L1 norm.
+func (f *FuzzyART) normalizedActivation(fiNorm, aNorm float64) float64 {
 	if fiNorm == 0 && aNorm == 0 {
 		return 1
 	}
@@ -180,7 +177,7 @@ func (f *FuzzyART) resonance(fiNorm, aNorm float64) float64 {
 
 func (f *FuzzyART) appendNewCategory(A []float64) int {
 	f.W = append(f.W, A)
-	f.T = append(f.T, &fuzzyActivation{
+	f.t = append(f.t, &fuzzyActivation{
 		fi: make([]float64, len(f.W[0])),
 	})
 	return len(f.W) - 1
@@ -196,8 +193,8 @@ func (f *FuzzyART) appendNewCategory(A []float64) int {
 func (f *FuzzyART) resonateOrReset(A []float64) (maxResonance float64, categoryIndex int) {
 	aNorm := simd.Shared.SumFloat64(A)
 
-	for _, t := range f.T {
-		resonance := f.resonance(t.fiNorm, aNorm)
+	for _, t := range f.t {
+		resonance := f.normalizedActivation(t.fiNorm, aNorm)
 		if resonance >= f.rho {
 			simd.Shared.UpdateFuzzyWeights(f.W[t.j], t.fi, f.beta)
 			return resonance, t.j
@@ -212,23 +209,23 @@ func (f *FuzzyART) resonateOrReset(A []float64) (maxResonance float64, categoryI
 }
 
 // Fit implements the complete ART learning cycle.
-func (f *FuzzyART) Fit(a []float64) (resonance float64, categoryIndex int) {
+func (f *FuzzyART) Fit(a []float64) (categoryActivation float64, categoryIndex int) {
 	A := f.complementCode(a)
 	f.activateCategories(A)
 	return f.resonateOrReset(A)
 }
 
 // Predict implements the recognition process with optional learning.
-// It returns the resonance value and the index of the best matching category.
+// It returns the category activation value and the index of the best matching category.
 // If learn is true, it also updates the weights of the matching category.
-func (f *FuzzyART) Predict(a []float64, learn bool) (resonance float64, categoryIndex int) {
+func (f *FuzzyART) Predict(a []float64, learn bool) (categoryActivation float64, categoryIndex int) {
 	A := f.complementCode(a)
 	f.activateCategories(A)
 	if !learn {
 		aNorm := simd.Shared.SumFloat64(A)
-		activation := f.T[0]
-		resonance = f.resonance(activation.fiNorm, aNorm)
-		return resonance, activation.j
+		activation := f.t[0]
+		categoryActivation = f.normalizedActivation(activation.fiNorm, aNorm)
+		return categoryActivation, activation.j
 	}
 
 	return f.resonateOrReset(A)
