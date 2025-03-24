@@ -1,4 +1,4 @@
-module art
+module github.com/oblq/art
 
 go 1.23.0
 

@@ -7,7 +7,7 @@ import (
 	"slices"
 	"sync"
 
-	"art/internal/simd"
+	"github.com/oblq/art/internal/simd"
 )
 
 type fuzzyActivation struct {

@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	"art"
-	"art/internal/dataset"
-	"art/internal/progress_bar"
+	"github.com/oblq/art"
+	"github.com/oblq/art/internal/dataset"
+	"github.com/oblq/art/internal/progress_bar"
 )
 
 const (
